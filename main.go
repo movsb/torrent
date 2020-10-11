@@ -1,14 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"sync"
 
 	"github.com/movsb/torrent/file"
+	"github.com/movsb/torrent/peer"
 	"github.com/movsb/torrent/tracker"
 )
 
 func main() {
-	n := `debian.torrent`
+	n := `ubuntu.torrent`
 	if len(os.Args) == 2 {
 		n = os.Args[1]
 	}
@@ -19,5 +22,29 @@ func main() {
 	t := tracker.Tracker{
 		URL: f.Announce,
 	}
-	t.Announce(f.InfoHash())
+	r := t.Announce(f.InfoHash())
+	if len(r.Peers) == 0 {
+		return
+	}
+
+	wg := &sync.WaitGroup{}
+
+	for _, p := range r.Peers {
+		wg.Add(1)
+		go func(p tracker.Peer) {
+			defer wg.Done()
+			c := peer.Client{
+				Peer:     p,
+				InfoHash: f.InfoHash(),
+			}
+			if err := c.Handshake(); err != nil {
+				fmt.Println(err)
+				return
+			}
+			fmt.Println(`handshake success`)
+			c.Close()
+		}(p)
+	}
+
+	wg.Wait()
 }

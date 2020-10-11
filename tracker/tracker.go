@@ -27,7 +27,7 @@ type Peer struct {
 	Port int    `bencode:"port"`
 }
 
-func (t *Tracker) Announce(infoHash [20]byte) {
+func (t *Tracker) Announce(infoHash [20]byte) AnnounceResponse {
 	u, err := url.Parse(t.URL)
 	if err != nil {
 		panic(err)
@@ -52,7 +52,5 @@ func (t *Tracker) Announce(infoHash [20]byte) {
 	if err := bencode.NewDecoder(resp.Body).Decode(&d); err != nil {
 		panic(err)
 	}
-	for _, p := range d.Peers {
-		fmt.Printf("ip: %-16s port: %-6d id: %x\n", p.IP, p.Port, p.ID)
-	}
+	return d
 }
