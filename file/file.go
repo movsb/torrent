@@ -3,6 +3,8 @@ package file
 import (
 	"bytes"
 	"crypto/sha1"
+	"fmt"
+	"math"
 	"os"
 
 	"github.com/zeebo/bencode"
@@ -10,11 +12,8 @@ import (
 
 // _File ...
 type _File struct {
-	Announce     string             `bencode:"announce"`
-	Comment      string             `bencode:"comment"`
-	CommentUTF8  string             `bencode:"comment.utf-8"`
-	CreationDate int                `bencode:"creation_date"`
-	Info         bencode.RawMessage `bencode:"info"`
+	Announce string             `bencode:"announce"`
+	Info     bencode.RawMessage `bencode:"info"`
 }
 
 func (f *_File) convert() (*File, error) {
@@ -24,27 +23,40 @@ func (f *_File) convert() (*File, error) {
 	}
 
 	c := &File{
-		Announce:     f.Announce,
-		Comment:      f.Comment,
-		CreationDate: f.CreationDate,
-		Info: Info{
-			Name:        i.Name,
-			Length:      i.Length,
-			PieceLength: i.PieceLength,
-			Pieces:      i.Pieces,
-			Files:       make([]Item, 0, len(i.Files)),
-		},
+		Announce:    f.Announce,
+		Name:        i.Name,
+		Length:      i.Length,
+		PieceLength: i.PieceLength,
+		Files:       make([]Item, 0, len(i.Files)),
 
 		rawInfo:  f.Info,
 		infoHash: f.infoHash(),
 	}
 
-	if f.CommentUTF8 != "" {
-		c.Comment = f.CommentUTF8
-	}
 	if i.NameUTF8 != `` {
-		c.Info.Name = i.NameUTF8
+		c.Name = i.NameUTF8
 	}
+
+	if len(i.Pieces)%sha1.Size != 0 {
+		return nil, fmt.Errorf(`invalid hash from pieces: len=%d`, len(i.Pieces))
+	}
+
+	nPieces := len(i.Pieces) / sha1.Size
+	totalLength := i.Length
+	if len(i.Files) > 0 {
+		totalLength = 0
+		for _, item := range i.Files {
+			totalLength += item.Length
+		}
+		i.Length = totalLength
+	}
+	calcNumPieces := int(math.Ceil(float64(totalLength) / float64(i.PieceLength)))
+	if calcNumPieces != nPieces {
+		return nil, fmt.Errorf(`invalid hash from pieces: calcNumPieces mismatch`)
+	}
+
+	c.numPieces = nPieces
+	c.Pieces = i.Pieces
 
 	for _, item := range i.Files {
 		it := Item{
@@ -54,7 +66,7 @@ func (f *_File) convert() (*File, error) {
 		if len(item.PathsUTF8) > 0 {
 			it.Paths = item.PathsUTF8
 		}
-		c.Info.Files = append(c.Info.Files, it)
+		c.Files = append(c.Files, it)
 	}
 
 	return c, nil
@@ -73,27 +85,32 @@ type _Info struct {
 	Name        string  `bencode:"name"`
 	NameUTF8    string  `bencode:"name.utf-8"`
 	Files       []_Item `bencode:"files"`
-	Length      int     `bencode:"length,omitempty"`
+	Length      int64   `bencode:"length,omitempty"`
 	PieceLength int     `bencode:"piece length"`
 	Pieces      []byte  `bencode:"pieces"`
 }
 
 // _Item ...
 type _Item struct {
-	Length    int      `bencode:"length"`
+	Length    int64    `bencode:"length"`
 	Paths     []string `bencode:"path"`
 	PathsUTF8 []string `bencode:"path.utf-8"`
 }
 
 // File ...
 type File struct {
-	Announce     string `bencode:"announce"`
-	Comment      string `bencode:"comment"`
-	CreationDate int    `bencode:"creation_date"`
-	Info         Info   `bencode:"info"`
+	Name     string
+	Announce string
 
-	rawInfo  bencode.RawMessage
-	infoHash [20]byte
+	Files  []Item
+	Length int64
+
+	PieceLength int
+	Pieces      []byte
+
+	rawInfo   bencode.RawMessage
+	infoHash  Hash
+	numPieces int
 }
 
 // InfoHash ...
@@ -101,20 +118,14 @@ func (f *File) InfoHash() [20]byte {
 	return f.infoHash
 }
 
-// Info ...
-type Info struct {
-	Name        string `bencode:"name"`
-	Files       []Item `bencode:"files"`
-	Length      int    `bencode:"length,omitempty"`
-	PieceLength int    `bencode:"piece length"`
-	Pieces      []byte `bencode:"pieces"`
-}
-
 // Item ...
 type Item struct {
-	Length int      `bencode:"length"`
-	Paths  []string `bencode:"path"`
+	Length int64
+	Paths  []string
 }
+
+// Hash ...
+type Hash [sha1.Size]byte
 
 func ParseFile(path string) (*File, error) {
 	fp, err := os.Open(path)
