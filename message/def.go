@@ -1,7 +1,5 @@
 package message
 
-import "io"
-
 // Marshaler ...
 type Marshaler interface {
 	Marshal() ([]byte, error)
@@ -9,7 +7,7 @@ type Marshaler interface {
 
 // Unmarshaler ...
 type Unmarshaler interface {
-	Unmarshal(r io.Reader) error
+	Unmarshal([]byte) error
 }
 
 // MsgID ...

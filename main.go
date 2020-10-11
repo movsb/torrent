@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/movsb/torrent/file"
+	"github.com/movsb/torrent/message"
 	"github.com/movsb/torrent/peer"
 	"github.com/movsb/torrent/tracker"
 )
@@ -22,29 +22,36 @@ func main() {
 	t := tracker.Tracker{
 		URL: f.Announce,
 	}
-	r := t.Announce(f.InfoHash())
+	r := t.Announce(f.InfoHash(), f.Length)
 	if len(r.Peers) == 0 {
 		return
 	}
 
-	wg := &sync.WaitGroup{}
+	//wg := &sync.WaitGroup{}
 
 	for _, p := range r.Peers {
-		wg.Add(1)
-		go func(p tracker.Peer) {
-			defer wg.Done()
-			c := peer.Client{
-				Peer:     p,
-				InfoHash: f.InfoHash(),
-			}
-			if err := c.Handshake(); err != nil {
-				fmt.Println(err)
-				return
-			}
-			fmt.Println(`handshake success`)
-			c.Close()
-		}(p)
+		//wg.Add(1)
+		//go func(p tracker.Peer) {
+		//defer wg.Done()
+		c := peer.Client{
+			Peer:     p,
+			InfoHash: f.InfoHash(),
+		}
+		if err := c.Handshake(); err != nil {
+			fmt.Println(err)
+			continue
+		}
+		fmt.Println(`handshake success`)
+
+		var bitField message.BitField
+		if err := c.Recv(&bitField); err != nil {
+			fmt.Println(`recv bitField`, err)
+		}
+		fmt.Println(bitField)
+
+		c.Close()
+		//}(p)
 	}
 
-	wg.Wait()
+	//wg.Wait()
 }

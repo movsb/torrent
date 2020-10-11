@@ -2,7 +2,9 @@ package peer
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"time"
 
@@ -39,26 +41,65 @@ func (c *Client) Handshake() error {
 	)
 
 	handshake := message.Handshake{
-		InfoHash: c.InfoHash,
+		InfoHash:  c.InfoHash,
+		MyPeerID:  tracker.MyPeerID,
+		HerPeerID: c.Peer.ID,
 	}
 
-	if err := c.roundtrip(&handshake, &handshake); err != nil {
-		return fmt.Errorf("client: handshake failed: %v", err)
+	b, err := handshake.Marshal()
+	if err != nil {
+		return fmt.Errorf("client: send: %v", err)
 	}
-
+	if _, err := c.rw.Write(b); err != nil {
+		return fmt.Errorf("client: send: %v", err)
+	}
+	if err := c.rw.Flush(); err != nil {
+		return fmt.Errorf("client: send: %v", err)
+	}
+	b = make([]byte, message.HandshakeLength)
+	if _, err = io.ReadFull(c.rw, b); err != nil {
+		return fmt.Errorf("client: read handshake: %v", err)
+	}
+	if err := handshake.Unmarshal(b); err != nil {
+		return fmt.Errorf("client: send: %v", err)
+	}
 	return nil
 }
 
-func (c *Client) roundtrip(req message.Marshaler, resp message.Unmarshaler) error {
+func (c *Client) Send(req message.Marshaler) error {
 	b, err := req.Marshal()
 	if err != nil {
-		return fmt.Errorf("client: roundtrip: %v", err)
+		return fmt.Errorf("client: send: %v", err)
+	}
+	sizeBuf := []byte{0, 0, 0, 0}
+	binary.BigEndian.PutUint32(sizeBuf, uint32(len(b)))
+	if _, err := c.rw.Write(sizeBuf); err != nil {
+		return fmt.Errorf("client: send: %v", err)
 	}
 	if _, err := c.rw.Write(b); err != nil {
-		return fmt.Errorf("client: roundtrip: %v", err)
+		return fmt.Errorf("client: send: %v", err)
 	}
 	if err := c.rw.Flush(); err != nil {
-		return fmt.Errorf("client: roundtrip: %v", err)
+		return fmt.Errorf("client: send: %v", err)
 	}
-	return resp.Unmarshal(c.rw)
+	return nil
+}
+
+func (c *Client) Recv(resp message.Unmarshaler) error {
+	sizeBuf := []byte{0, 0, 0, 0}
+	if _, err := io.ReadFull(c.rw, sizeBuf); err != nil {
+		return fmt.Errorf("client: recv: %v", err)
+	}
+	msgSize := binary.BigEndian.Uint32(sizeBuf)
+	if msgSize > 1<<20 {
+		panic(`peer send large message size`)
+	}
+	buf := make([]byte, msgSize)
+	if _, err := io.ReadFull(c.rw, buf); err != nil {
+		return fmt.Errorf("client: recv: %v", err)
+	}
+	if err := resp.Unmarshal(buf); err != nil {
+		return fmt.Errorf("client: recv: unmarshal: %v", err)
+	}
+	return nil
 }
