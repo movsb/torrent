@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/movsb/torrent/file"
-	"github.com/movsb/torrent/message"
 	"github.com/movsb/torrent/peer"
 	"github.com/movsb/torrent/tracker"
 )
@@ -43,11 +42,11 @@ func main() {
 		}
 		fmt.Println(`handshake success`)
 
-		var bitField message.BitField
-		if err := c.Recv(&bitField); err != nil {
+		id, msg, err := c.Recv()
+		if err != nil {
 			fmt.Println(`recv bitField`, err)
 		}
-		fmt.Println(bitField)
+		fmt.Println(id, msg)
 
 		c.Close()
 		//}(p)

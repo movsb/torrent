@@ -66,7 +66,8 @@ func (c *Client) Handshake() error {
 	return nil
 }
 
-func (c *Client) Send(req message.Marshaler) error {
+// Send ...
+func (c *Client) Send(msgID message.MsgID, req message.Marshaler) error {
 	b, err := req.Marshal()
 	if err != nil {
 		return fmt.Errorf("client: send: %v", err)
@@ -75,6 +76,9 @@ func (c *Client) Send(req message.Marshaler) error {
 	binary.BigEndian.PutUint32(sizeBuf, uint32(len(b)))
 	if _, err := c.rw.Write(sizeBuf); err != nil {
 		return fmt.Errorf("client: send: %v", err)
+	}
+	if err := c.rw.WriteByte(byte(msgID)); err != nil {
+		return fmt.Errorf("client: send msg id: %v", err)
 	}
 	if _, err := c.rw.Write(b); err != nil {
 		return fmt.Errorf("client: send: %v", err)
@@ -85,21 +89,54 @@ func (c *Client) Send(req message.Marshaler) error {
 	return nil
 }
 
-func (c *Client) Recv(resp message.Unmarshaler) error {
+// Recv ...
+func (c *Client) Recv() (message.MsgID, message.Unmarshaler, error) {
 	sizeBuf := []byte{0, 0, 0, 0}
 	if _, err := io.ReadFull(c.rw, sizeBuf); err != nil {
-		return fmt.Errorf("client: recv: %v", err)
+		return 0, nil, fmt.Errorf("client: recv size: %v", err)
 	}
+
 	msgSize := binary.BigEndian.Uint32(sizeBuf)
+	// keep alive
+	if msgSize == 0 {
+		return 0, nil, nil
+	}
 	if msgSize > 1<<20 {
 		panic(`peer send large message size`)
 	}
+
 	buf := make([]byte, msgSize)
 	if _, err := io.ReadFull(c.rw, buf); err != nil {
-		return fmt.Errorf("client: recv: %v", err)
+		return 0, nil, fmt.Errorf("client: recv msg: %v", err)
 	}
-	if err := resp.Unmarshal(buf); err != nil {
-		return fmt.Errorf("client: recv: unmarshal: %v", err)
+
+	var (
+		msgID = message.MsgID(buf[0])
+		msg   message.Unmarshaler
+	)
+
+	switch msgID {
+	default:
+		return 0, nil, fmt.Errorf("client: recv msg: unknown")
+	case message.MsgChoke:
+		msg = &message.Choke{}
+	case message.MsgUnChoke:
+		msg = &message.UnChoke{}
+	case message.MsgInterested:
+		msg = &message.Interested{}
+	case message.MsgNotInterested:
+		msg = &message.NotInterested{}
+	case message.MsgHave:
+	case message.MsgBitField:
+		msg = &message.BitField{}
+	case message.MsgRequest:
+	case message.MsgPiece:
+	case message.MsgCancel:
 	}
-	return nil
+
+	if err := msg.Unmarshal(buf[1:]); err != nil {
+		return 0, nil, fmt.Errorf("client: recv: unmarshal: %v", err)
+	}
+
+	return msgID, msg, nil
 }
