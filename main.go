@@ -1,13 +1,14 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/movsb/torrent/file"
+	"github.com/movsb/torrent/tracker"
 )
 
 func main() {
-	f, _ := file.ParseFile(`debian.torrent`)
-	fmt.Println(f.InfoHash())
-	fmt.Println(f)
+	f, _ := file.ParseFile(`ubuntu.torrent`)
+	t := tracker.Tracker{
+		URL: f.Announce,
+	}
+	t.Announce(f.InfoHash())
 }

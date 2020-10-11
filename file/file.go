@@ -3,7 +3,6 @@ package file
 import (
 	"bytes"
 	"crypto/sha1"
-	"fmt"
 	"os"
 
 	"github.com/zeebo/bencode"
@@ -61,13 +60,12 @@ func (f *_File) convert() (*File, error) {
 	return c, nil
 }
 
-func (f *_File) infoHash() string {
+func (f *_File) infoHash() [20]byte {
 	buf := bytes.Buffer{}
 	if err := bencode.NewEncoder(&buf).Encode(f.Info); err != nil {
 		panic(err)
 	}
-	sum := sha1.Sum(buf.Bytes())
-	return fmt.Sprintf("%x", sum)
+	return sha1.Sum(buf.Bytes())
 }
 
 // _Info ...
@@ -95,11 +93,11 @@ type File struct {
 	Info         Info   `bencode:"info"`
 
 	rawInfo  bencode.RawMessage
-	infoHash string
+	infoHash [20]byte
 }
 
 // InfoHash ...
-func (f *File) InfoHash() string {
+func (f *File) InfoHash() [20]byte {
 	return f.infoHash
 }
 
