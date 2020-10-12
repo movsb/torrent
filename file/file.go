@@ -55,8 +55,7 @@ func (f *_File) convert() (*File, error) {
 		return nil, fmt.Errorf(`invalid hash from pieces: calcNumPieces mismatch`)
 	}
 
-	c.numPieces = nPieces
-	c.Pieces = i.Pieces
+	c.PieceHashes = PieceHashes(i.Pieces)
 
 	for _, item := range i.Files {
 		it := Item{
@@ -106,11 +105,10 @@ type File struct {
 	Length int64
 
 	PieceLength int
-	Pieces      []byte
+	PieceHashes PieceHashes
 
-	rawInfo   bencode.RawMessage
-	infoHash  Hash
-	numPieces int
+	rawInfo  bencode.RawMessage
+	infoHash Hash
 }
 
 // InfoHash ...
@@ -126,6 +124,20 @@ type Item struct {
 
 // Hash ...
 type Hash [sha1.Size]byte
+
+// PieceHashes ...
+type PieceHashes []byte
+
+// Len ...
+func (p PieceHashes) Len() int {
+	return len(p) / sha1.Size
+}
+
+// Index ...
+func (p PieceHashes) Index(index int) []byte {
+	s := sha1.Size * index
+	return p[s : s+sha1.Size]
+}
 
 func ParseFile(path string) (*File, error) {
 	fp, err := os.Open(path)

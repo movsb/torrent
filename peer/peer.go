@@ -2,6 +2,8 @@ package peer
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -20,6 +22,7 @@ type Client struct {
 	conn     net.Conn
 	rw       *bufio.ReadWriter
 	bitField message.BitField
+	unchoked bool
 }
 
 // Close ...
@@ -138,6 +141,7 @@ func (c *Client) Recv() (message.MsgID, message.Unmarshaler, error) {
 		msg = &message.BitField{}
 	case message.MsgRequest:
 	case message.MsgPiece:
+		msg = &message.Piece{}
 	case message.MsgCancel:
 	}
 
@@ -158,5 +162,122 @@ func (c *Client) RecvBitField() error {
 		log.Printf("recv non-bitfield message: %v", id)
 	}
 	c.bitField = *msg.(*message.BitField)
+	return nil
+}
+
+// Download ...
+func (c *Client) Download(pending chan SinglePieceData, done chan SinglePieceData) error {
+	for piece := range pending {
+		if !c.bitField.HasPiece(piece.Index) {
+			fmt.Printf("client %s doesn't have piece %d\n", c.Peer.ID, piece.Index)
+			pending <- piece
+			time.Sleep(time.Millisecond * 500)
+			continue
+		}
+
+		if err := c.downloadPiece(&piece); err != nil {
+			fmt.Printf("download piece failed: %v\n", err)
+			pending <- piece
+			time.Sleep(time.Millisecond * 500)
+			continue
+		}
+
+		if err := c.checkIntegrity(&piece); err != nil {
+			fmt.Printf("check integrity failed: %v\n", err)
+			pending <- piece
+			time.Sleep(time.Millisecond * 500)
+			continue
+		}
+
+		c.Send(message.MsgHave, &message.Have{Index: piece.Index})
+
+		done <- piece
+	}
+
+	return nil
+}
+
+func (c *Client) downloadPiece(piece *SinglePieceData) error {
+	piece.requested = 0
+	piece.downloaded = 0
+
+	if len(piece.Data) != piece.Length {
+		piece.Data = make([]byte, piece.Length)
+	}
+
+	for piece.downloaded < piece.Length {
+		if c.unchoked {
+			if piece.requested < piece.Length {
+				blockSize := message.MaxRequestLength
+				if piece.requested+blockSize > piece.Length {
+					blockSize = piece.Length - piece.requested
+				}
+
+				if err := c.Send(message.MsgRequest, &message.Request{
+					Index:  piece.Index,
+					Begin:  piece.requested,
+					Length: blockSize,
+				}); err != nil {
+					return fmt.Errorf("send request failed")
+				}
+
+				piece.requested += blockSize
+			}
+		}
+
+		if err := c.readMessage(piece); err != nil {
+			return fmt.Errorf("read message failed: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func (c *Client) readMessage(piece *SinglePieceData) error {
+	id, msg, err := c.Recv()
+	if err != nil {
+		return fmt.Errorf("client: read message failed: %v", err)
+	}
+	if msg == nil {
+		fmt.Printf("keep alive\n")
+		return nil
+	}
+
+	switch id {
+	default:
+		return fmt.Errorf("peer sent unknown message: %v", id)
+	case message.MsgChoke:
+		c.unchoked = false
+		fmt.Printf("peer choked\n")
+	case message.MsgUnChoke:
+		c.unchoked = true
+		fmt.Printf("peer not choked\n")
+	case message.MsgHave:
+		have := msg.(*message.Have)
+		c.bitField.SetPiece(have.Index)
+		fmt.Printf("peer has piece %d\n", have.Index)
+	case message.MsgPiece:
+		pieceRecv := msg.(*message.Piece)
+		if pieceRecv.Index != piece.Index {
+			return fmt.Errorf("peer sent unknown piece index %d", pieceRecv.Index)
+		}
+		if pieceRecv.Begin < 0 || pieceRecv.Begin+len(pieceRecv.Data) > len(piece.Data) {
+			return fmt.Errorf(
+				"peer sent data too long: begin: %d + data: %d > data: %d",
+				pieceRecv.Begin, len(pieceRecv.Data), len(piece.Data),
+			)
+		}
+		copy(piece.Data[pieceRecv.Begin:], pieceRecv.Data)
+		piece.downloaded += len(pieceRecv.Data)
+	}
+
+	return nil
+}
+
+func (c *Client) checkIntegrity(piece *SinglePieceData) error {
+	got := sha1.Sum(piece.Data)
+	if !bytes.Equal(piece.Hash, got[:]) {
+		return fmt.Errorf("check integrity failed")
+	}
 	return nil
 }

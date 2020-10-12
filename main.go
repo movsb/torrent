@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/movsb/torrent/file"
+	"github.com/movsb/torrent/message"
 	"github.com/movsb/torrent/peer"
 	"github.com/movsb/torrent/tracker"
 )
@@ -26,6 +27,28 @@ func main() {
 	if len(r.Peers) == 0 {
 		return
 	}
+
+	nPieces := f.PieceHashes.Len()
+	chPieces := make(chan peer.SinglePieceData, nPieces)
+	for i := 0; i < nPieces-1; i++ {
+		chPieces <- peer.SinglePieceData{
+			Index:  i,
+			Hash:   f.PieceHashes.Index(i),
+			Length: f.PieceLength,
+		}
+	}
+
+	lastPieceIndex, lastPieceLength := nPieces-1, f.PieceLength
+	if remain := int(f.Length % int64(f.PieceLength)); remain != 0 {
+		lastPieceLength = remain
+	}
+	chPieces <- peer.SinglePieceData{
+		Index:  lastPieceIndex,
+		Hash:   f.PieceHashes.Index(lastPieceIndex),
+		Length: lastPieceLength,
+	}
+
+	chResult := make(chan peer.SinglePieceData)
 
 	wg := &sync.WaitGroup{}
 
@@ -53,9 +76,35 @@ func main() {
 			}
 			fmt.Println(`received bitfield`)
 
+			if err := c.Send(message.MsgUnChoke, message.UnChoke{}); err != nil {
+				fmt.Println(err)
+				return
+			}
+
+			if err := c.Send(message.MsgInterested, message.Interested{}); err != nil {
+				fmt.Println(err)
+				return
+			}
+
+			if err := c.Download(chPieces, chResult); err != nil {
+				fmt.Println(err)
+				return
+			}
+
+			fmt.Println(`client exit`)
 		}(p)
-		break
 	}
+
+	donePieces := 0
+	for donePieces < nPieces {
+		piece := <-chResult
+		_ = piece
+		donePieces++
+		fmt.Printf("piece downloaded: %d / %d\n", donePieces, nPieces)
+	}
+
+	close(chPieces)
+	close(chResult)
 
 	wg.Wait()
 }

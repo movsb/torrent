@@ -30,7 +30,7 @@ type Peer struct {
 }
 
 func (p Peer) String() string {
-	return fmt.Sprintf(`%s (%s:%d)`, p.ID, p.IP, p.Port)
+	return fmt.Sprintf(`%v (%s:%d)`, p.ID.String(), p.IP, p.Port)
 }
 
 // PeerID ...
