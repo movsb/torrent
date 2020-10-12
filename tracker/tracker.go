@@ -1,9 +1,11 @@
 package tracker
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/zeebo/bencode"
 )
@@ -27,12 +29,22 @@ type Peer struct {
 	Port int    `bencode:"port"`
 }
 
+func (p Peer) String() string {
+	return fmt.Sprintf(`%s (%s:%d)`, p.ID, p.IP, p.Port)
+}
+
 // PeerID ...
 type PeerID [PeerIDLength]byte
 
-const (
-	PeerIDLength = 20
-)
+func (p PeerID) String() string {
+	b, _ := json.Marshal(p)
+	s := string(b[1 : len(b)-1])
+	s = strings.ReplaceAll(s, `\"`, `"`)
+	return s
+}
+
+// PeerIDLength ...
+const PeerIDLength = 20
 
 // UnmarshalBencode ...
 func (p *PeerID) UnmarshalBencode(r []byte) error {
@@ -47,11 +59,12 @@ func (p *PeerID) UnmarshalBencode(r []byte) error {
 	return nil
 }
 
+// MyPeerID ...
 var MyPeerID = makePeerID()
 
 func makePeerID() PeerID {
 	var id PeerID
-	copy(id[:], []byte(`bt123456781234567890`))
+	copy(id[:], []byte(`dev-bt12345678123456`))
 	return id
 }
 

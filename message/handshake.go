@@ -24,6 +24,7 @@ var (
 	handshakeString   = `BitTorrent protocol`
 	handshakeReserved = [8]byte{0, 0, 0, 0, 0, 0, 0, 0}
 
+	// HandshakeLength ...
 	HandshakeLength        = 1 + len(handshakeString) + len(handshakeReserved) + sha1.Size + tracker.PeerIDLength
 	handshakeInfoHashStart = HandshakeLength - sha1.Size - tracker.PeerIDLength
 	handshakePeerIDStart   = HandshakeLength - tracker.PeerIDLength
@@ -65,7 +66,7 @@ func (m *Handshake) Unmarshal(r []byte) error {
 	}
 
 	start = handshakePeerIDStart
-	recv = r[start : start+20]
+	recv = r[start : start+tracker.PeerIDLength]
 	if !bytes.Equal(m.HerPeerID[:], recv) {
 		fmt.Println(m.HerPeerID)
 		fmt.Println(recv)

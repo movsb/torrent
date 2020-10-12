@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"time"
 
@@ -18,12 +19,16 @@ type Client struct {
 	InfoHash [20]byte
 	conn     net.Conn
 	rw       *bufio.ReadWriter
+	bitField message.BitField
 }
 
 // Close ...
 func (c *Client) Close() error {
-	c.rw.Flush()
-	c.conn.Close()
+	if c.conn != nil {
+		c.rw.Flush()
+		c.conn.Close()
+		c.conn = nil
+	}
 	return nil
 }
 
@@ -73,7 +78,7 @@ func (c *Client) Send(msgID message.MsgID, req message.Marshaler) error {
 		return fmt.Errorf("client: send: %v", err)
 	}
 	sizeBuf := []byte{0, 0, 0, 0}
-	binary.BigEndian.PutUint32(sizeBuf, uint32(len(b)))
+	binary.BigEndian.PutUint32(sizeBuf, 1+uint32(len(b)))
 	if _, err := c.rw.Write(sizeBuf); err != nil {
 		return fmt.Errorf("client: send: %v", err)
 	}
@@ -99,6 +104,7 @@ func (c *Client) Recv() (message.MsgID, message.Unmarshaler, error) {
 	msgSize := binary.BigEndian.Uint32(sizeBuf)
 	// keep alive
 	if msgSize == 0 {
+		log.Printf("keep alive from: %v", c.Peer)
 		return 0, nil, nil
 	}
 	if msgSize > 1<<20 {
@@ -127,6 +133,7 @@ func (c *Client) Recv() (message.MsgID, message.Unmarshaler, error) {
 	case message.MsgNotInterested:
 		msg = &message.NotInterested{}
 	case message.MsgHave:
+		msg = &message.Have{}
 	case message.MsgBitField:
 		msg = &message.BitField{}
 	case message.MsgRequest:
@@ -139,4 +146,17 @@ func (c *Client) Recv() (message.MsgID, message.Unmarshaler, error) {
 	}
 
 	return msgID, msg, nil
+}
+
+// RecvBitField ...
+func (c *Client) RecvBitField() error {
+	id, msg, err := c.Recv()
+	if err != nil {
+		log.Printf("recv bitfield failed: %v", err)
+	}
+	if id != message.MsgBitField {
+		log.Printf("recv non-bitfield message: %v", id)
+	}
+	c.bitField = *msg.(*message.BitField)
+	return nil
 }
