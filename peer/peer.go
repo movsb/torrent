@@ -19,10 +19,16 @@ import (
 type Client struct {
 	Peer     tracker.Peer
 	InfoHash [20]byte
-	conn     net.Conn
-	rw       *bufio.ReadWriter
+
+	conn net.Conn
+	rw   *bufio.ReadWriter
+
 	bitField message.BitField
-	unchoked bool
+
+	unchoked   bool
+	downloaded int
+	requested  int
+	backlog    int
 }
 
 // Close ...
@@ -42,6 +48,7 @@ func (c *Client) Handshake() error {
 	if err != nil {
 		return fmt.Errorf("client: handshake failed: %v", err)
 	}
+	fmt.Println(`peer: `, peerAddr)
 	c.conn = conn
 	c.rw = bufio.NewReadWriter(
 		bufio.NewReader(conn),
@@ -178,8 +185,7 @@ func (c *Client) Download(pending chan SinglePieceData, done chan SinglePieceDat
 		if err := c.downloadPiece(&piece); err != nil {
 			fmt.Printf("download piece failed: %v\n", err)
 			pending <- piece
-			time.Sleep(time.Millisecond * 500)
-			continue
+			return fmt.Errorf("download piece failed: %v", err)
 		}
 
 		if err := c.checkIntegrity(&piece); err != nil {
@@ -198,30 +204,33 @@ func (c *Client) Download(pending chan SinglePieceData, done chan SinglePieceDat
 }
 
 func (c *Client) downloadPiece(piece *SinglePieceData) error {
-	piece.requested = 0
-	piece.downloaded = 0
+	c.requested = 0
+	c.downloaded = 0
+	c.backlog = 0
 
 	if len(piece.Data) != piece.Length {
 		piece.Data = make([]byte, piece.Length)
 	}
 
-	for piece.downloaded < piece.Length {
+	for c.downloaded < piece.Length {
 		if c.unchoked {
-			if piece.requested < piece.Length {
+			for c.backlog < 5 && c.requested < piece.Length {
 				blockSize := message.MaxRequestLength
-				if piece.requested+blockSize > piece.Length {
-					blockSize = piece.Length - piece.requested
+				if c.requested+blockSize > piece.Length {
+					blockSize = piece.Length - c.requested
 				}
 
 				if err := c.Send(message.MsgRequest, &message.Request{
 					Index:  piece.Index,
-					Begin:  piece.requested,
+					Begin:  c.requested,
 					Length: blockSize,
 				}); err != nil {
 					return fmt.Errorf("send request failed")
 				}
 
-				piece.requested += blockSize
+				c.backlog++
+				c.requested += blockSize
+				// fmt.Printf("backlog: %d, requested: %d\n", c.backlog, c.requested)
 			}
 		}
 
@@ -268,7 +277,8 @@ func (c *Client) readMessage(piece *SinglePieceData) error {
 			)
 		}
 		copy(piece.Data[pieceRecv.Begin:], pieceRecv.Data)
-		piece.downloaded += len(pieceRecv.Data)
+		c.downloaded += len(pieceRecv.Data)
+		c.backlog--
 	}
 
 	return nil

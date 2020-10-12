@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/movsb/torrent/file"
 	"github.com/movsb/torrent/message"
@@ -52,10 +53,15 @@ func main() {
 
 	wg := &sync.WaitGroup{}
 
+	nClient := int32(len(r.Peers))
+
 	for _, p := range r.Peers {
 		wg.Add(1)
 		go func(p tracker.Peer) {
-			defer wg.Done()
+			defer func() {
+				wg.Done()
+				atomic.AddInt32(&nClient, -1)
+			}()
 
 			c := peer.Client{
 				Peer:     p,
@@ -100,7 +106,8 @@ func main() {
 		piece := <-chResult
 		_ = piece
 		donePieces++
-		fmt.Printf("piece downloaded: %d / %d\n", donePieces, nPieces)
+		percent := float64(donePieces) / float64(f.PieceHashes.Len()) * 100
+		fmt.Printf("%0.2f%% piece downloaded: %d / %d from %d peers\n", percent, donePieces, nPieces, atomic.LoadInt32(&nClient))
 	}
 
 	close(chPieces)

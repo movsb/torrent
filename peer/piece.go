@@ -6,7 +6,4 @@ type SinglePieceData struct {
 	Hash   []byte
 	Length int
 	Data   []byte
-
-	downloaded int
-	requested  int
 }
