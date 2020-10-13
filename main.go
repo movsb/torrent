@@ -2,17 +2,32 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 
+	cmdfile "github.com/movsb/torrent/cmd/file"
 	"github.com/movsb/torrent/file"
 	"github.com/movsb/torrent/message"
 	"github.com/movsb/torrent/peer"
 	"github.com/movsb/torrent/tracker"
+	"github.com/spf13/cobra"
 )
 
 func main() {
+	rootCmd := &cobra.Command{
+		Use:   filepath.Base(os.Args[0]),
+		Short: `A BitTorrent client.`,
+	}
+
+	cmdfile.AddCommands(rootCmd)
+	if err := rootCmd.Execute(); err != nil {
+		log.Println(err)
+	}
+	os.Exit(0)
+
 	n := `ubuntu.torrent`
 	if len(os.Args) == 2 {
 		n = os.Args[1]

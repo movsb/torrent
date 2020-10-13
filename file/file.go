@@ -22,6 +22,10 @@ func (f *_File) convert() (*File, error) {
 		return nil, err
 	}
 
+	if i.NameUTF8 != `` {
+		i.Name = i.NameUTF8
+	}
+
 	c := &File{
 		Announce:    f.Announce,
 		Name:        i.Name,
@@ -33,28 +37,29 @@ func (f *_File) convert() (*File, error) {
 		infoHash: f.infoHash(),
 	}
 
-	if i.NameUTF8 != `` {
-		c.Name = i.NameUTF8
-	}
-
 	if len(i.Pieces)%sha1.Size != 0 {
 		return nil, fmt.Errorf(`invalid hash from pieces: len=%d`, len(i.Pieces))
 	}
 
-	nPieces := len(i.Pieces) / sha1.Size
-	totalLength := i.Length
-	if len(i.Files) > 0 {
-		totalLength = 0
+	// if it is a single file torrent,
+	// transform to multiple files torrent.
+	if i.Length > 0 {
+		i.Files = append(i.Files, _Item{
+			Length: i.Length,
+			Paths:  []string{i.Name},
+		})
+	} else {
+		c.Length = 0
 		for _, item := range i.Files {
-			totalLength += item.Length
+			c.Length += item.Length
 		}
-		i.Length = totalLength
 	}
-	calcNumPieces := int(math.Ceil(float64(totalLength) / float64(i.PieceLength)))
+
+	nPieces := len(i.Pieces) / sha1.Size
+	calcNumPieces := int(math.Ceil(float64(c.Length) / float64(i.PieceLength)))
 	if calcNumPieces != nPieces {
 		return nil, fmt.Errorf(`invalid hash from pieces: calcNumPieces mismatch`)
 	}
-
 	c.PieceHashes = PieceHashes(i.Pieces)
 
 	for _, item := range i.Files {
