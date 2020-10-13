@@ -32,6 +32,15 @@ func AddCommands(root *cobra.Command) {
 		RunE:  fileList,
 	}
 	fileCmd.AddCommand(listFilesCmd)
+
+	hashListCmd := &cobra.Command{
+		Use:   `hashes <torrent-file>`,
+		Short: `Show piece hashes.`,
+		Args:  cobra.ExactArgs(1),
+		RunE:  hashList,
+	}
+	fileCmd.AddCommand(hashListCmd)
+
 }
 
 func fileInfo(cmd *cobra.Command, args []string) error {
@@ -58,5 +67,15 @@ func fileList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	yaml.NewEncoder(os.Stdout).Encode(tf.Files)
+	return nil
+}
+
+func hashList(cmd *cobra.Command, args []string) error {
+	tf, err := file.ParseFile(args[0])
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	yaml.NewEncoder(os.Stdout).Encode(tf.PieceHashes)
 	return nil
 }

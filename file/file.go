@@ -144,6 +144,15 @@ func (p PieceHashes) Index(index int) []byte {
 	return p[s : s+sha1.Size]
 }
 
+// MarshalYAML ...
+func (p PieceHashes) MarshalYAML() (interface{}, error) {
+	list := make([]string, p.Len())
+	for i := 0; i < p.Len(); i++ {
+		list[i] = fmt.Sprintf("%x", p.Index(i))
+	}
+	return list, nil
+}
+
 func ParseFile(path string) (*File, error) {
 	fp, err := os.Open(path)
 	if err != nil {
