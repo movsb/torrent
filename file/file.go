@@ -44,6 +44,7 @@ func (f *_File) convert() (*File, error) {
 	// if it is a single file torrent,
 	// transform to multiple files torrent.
 	if i.Length > 0 {
+		c.Single = true
 		i.Files = append(i.Files, _Item{
 			Length: i.Length,
 			Paths:  []string{i.Name},
@@ -106,6 +107,7 @@ type File struct {
 	Name     string
 	Announce string
 
+	Single bool
 	Files  []Item
 	Length int64
 

@@ -161,12 +161,18 @@ func (c *Client) Recv() (message.MsgID, message.Unmarshaler, error) {
 
 // RecvBitField ...
 func (c *Client) RecvBitField() error {
+keepalive:
 	id, msg, err := c.Recv()
 	if err != nil {
 		log.Printf("recv bitfield failed: %v", err)
+		return err
+	}
+	if msg == nil {
+		goto keepalive
 	}
 	if id != message.MsgBitField {
 		log.Printf("recv non-bitfield message: %v", id)
+		return fmt.Errorf("recv non-bitfield message")
 	}
 	c.bitField = *msg.(*message.BitField)
 	return nil
@@ -230,7 +236,7 @@ func (c *Client) downloadPiece(piece *SinglePieceData) error {
 
 				c.backlog++
 				c.requested += blockSize
-				// fmt.Printf("backlog: %d, requested: %d\n", c.backlog, c.requested)
+				//fmt.Printf("backlog: %d, requested: %d\n", c.backlog, c.requested)
 			}
 		}
 

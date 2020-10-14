@@ -56,6 +56,7 @@ func fileInfo(cmd *cobra.Command, args []string) error {
 		`FileCount`:   len(tf.Files),
 		`PieceLength`: tf.PieceLength,
 		`PieceCount`:  tf.PieceHashes.Len(),
+		`Single`:      tf.Single,
 	})
 	return nil
 }
