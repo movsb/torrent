@@ -20,16 +20,24 @@ func AddCommands(root *cobra.Command) {
 		Args:  cobra.ExactArgs(1),
 		RunE:  downloadTorrent,
 	}
+	downloadCmd.Flags().StringP("tracker", "t", "", "use this tracker")
 	root.AddCommand(downloadCmd)
 }
 
 func downloadTorrent(cmd *cobra.Command, args []string) error {
+
 	f, err := file.ParseFile(args[0])
 	if err != nil {
 		return err
 	}
+
+	trackerURL := f.Announce
+	if t, _ := cmd.Flags().GetString("tracker"); t != "" {
+		trackerURL = t
+	}
+
 	t := tracker.Tracker{
-		URL: f.Announce,
+		URL: trackerURL,
 	}
 	r := t.Announce(f.InfoHash(), f.Length)
 	if len(r.Peers) == 0 {
