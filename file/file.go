@@ -119,7 +119,7 @@ type File struct {
 }
 
 // InfoHash ...
-func (f *File) InfoHash() [20]byte {
+func (f *File) InfoHash() Hash {
 	return f.infoHash
 }
 
@@ -131,6 +131,10 @@ type Item struct {
 
 // Hash ...
 type Hash [sha1.Size]byte
+
+func (h Hash) String() string {
+	return fmt.Sprintf("%x", [sha1.Size]byte(h))
+}
 
 // PieceHashes ...
 type PieceHashes []byte
@@ -168,4 +172,18 @@ func ParseFile(path string) (*File, error) {
 	}
 
 	return f.convert()
+}
+
+func ParseFileToInterface(path string) (interface{}, error) {
+	fp, err := os.Open(path)
+	if err != nil {
+		panic(err)
+	}
+	defer fp.Close()
+
+	var f interface{}
+	if err := bencode.NewDecoder(fp).Decode(&f); err != nil {
+		panic(err)
+	}
+	return f, nil
 }

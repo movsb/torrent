@@ -41,6 +41,23 @@ func AddCommands(root *cobra.Command) {
 	}
 	fileCmd.AddCommand(hashListCmd)
 
+	dumpFile := &cobra.Command{
+		Use:   `dump <torrent>`,
+		Short: `Dump torrent file`,
+		Args:  cobra.ExactArgs(1),
+		RunE:  dumpFile,
+	}
+	dumpFile.Flags().Bool("piece-hashes", false, "dump piece hashes (as base64-encoded binary)")
+	fileCmd.AddCommand(dumpFile)
+
+	infoHashCmd := &cobra.Command{
+		Use:   "info-hash <torrents...>",
+		Short: "Info hash of torrents",
+		Args:  cobra.MinimumNArgs(1),
+		RunE:  infoHashCmd,
+	}
+	fileCmd.AddCommand(infoHashCmd)
+
 }
 
 func fileInfo(cmd *cobra.Command, args []string) error {
