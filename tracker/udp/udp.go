@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/movsb/torrent/tracker"
+	tcptracker "github.com/movsb/torrent/tracker/tcp"
 )
 
 func init() {
@@ -22,7 +22,7 @@ func makeTransactionID() uint32 {
 type UDPTracker struct {
 	Address  string
 	InfoHash [20]byte
-	MyPeerID tracker.PeerID
+	MyPeerID tcptracker.PeerID
 	conn     *net.UDPConn
 }
 
@@ -67,6 +67,8 @@ func (t *UDPTracker) dial() error {
 
 // Connect ...
 func (t *UDPTracker) connect() (*ConnectResponse, error) {
+	defer t.conn.SetDeadline(time.Time{})
+
 	req := ConnectRequest{
 		ProtocolID:    protocolID,
 		Action:        ActionConnect,
@@ -76,11 +78,14 @@ func (t *UDPTracker) connect() (*ConnectResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal error: %v", err)
 	}
+
+	t.conn.SetDeadline(time.Now().Add(time.Second * 10))
 	if _, err = t.conn.Write(b); err != nil {
 		return nil, fmt.Errorf("connect error: %v", err)
 	}
 
 	b = make([]byte, 16)
+	t.conn.SetDeadline(time.Now().Add(time.Second * 10))
 	_, err = t.conn.Read(b)
 	if err != nil {
 		return nil, fmt.Errorf("read error: %v", err)
@@ -100,6 +105,8 @@ func (t *UDPTracker) connect() (*ConnectResponse, error) {
 }
 
 func (t *UDPTracker) announce(connectionID uint64) (*AnnounceResponse, error) {
+	defer t.conn.SetDeadline(time.Time{})
+
 	req := AnnounceRequest{
 		ConnectionID:  connectionID,
 		Action:        ActionAnnounce,
@@ -119,11 +126,14 @@ func (t *UDPTracker) announce(connectionID uint64) (*AnnounceResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal error: %v", err)
 	}
+
+	t.conn.SetDeadline(time.Now().Add(time.Second * 10))
 	if _, err := t.conn.Write(b); err != nil {
 		return nil, fmt.Errorf("announce error: %v", err)
 	}
 
 	b = make([]byte, 65536)
+	t.conn.SetDeadline(time.Now().Add(time.Second * 10))
 	n, err := t.conn.Read(b)
 	if err != nil {
 		return nil, fmt.Errorf("read announce failed: %v", err)

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/movsb/torrent/file"
-	"github.com/movsb/torrent/tracker"
+	tcptracker "github.com/movsb/torrent/tracker/tcp"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,7 +18,7 @@ func TestUDPTracker(t *testing.T) {
 	ut := &UDPTracker{
 		Address:  `udp://tracker.leechers-paradise.org:6969`,
 		InfoHash: f.InfoHash(),
-		MyPeerID: tracker.MyPeerID,
+		MyPeerID: tcptracker.MyPeerID,
 	}
 
 	resp, err := ut.Announce()

@@ -5,7 +5,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 
-	"github.com/movsb/torrent/tracker"
+	tracker "github.com/movsb/torrent/tracker/tcp"
 )
 
 // Handshake ...

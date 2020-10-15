@@ -2,10 +2,14 @@ package tracker
 
 import (
 	"fmt"
+	"net/url"
+	"os"
 
 	"github.com/movsb/torrent/file"
-	trackerpkg "github.com/movsb/torrent/tracker"
+	tcptracker "github.com/movsb/torrent/tracker/tcp"
+	udptracker "github.com/movsb/torrent/tracker/udp"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 // AddCommands ...
@@ -25,19 +29,42 @@ func AddCommands(root *cobra.Command) {
 
 func testTracker(cmd *cobra.Command, args []string) error {
 	tracker := args[0]
-	torrent := args[1]
+	u, err := url.Parse(tracker)
+	if err != nil {
+		return err
+	}
 
+	torrent := args[1]
 	f, err := file.ParseFile(torrent)
 	if err != nil {
 		return err
 	}
-	t := trackerpkg.Tracker{
-		URL: tracker,
+
+	if u.Scheme == "http" || u.Scheme == "https" {
+		t := tcptracker.TCPTracker{
+			Address:  tracker,
+			InfoHash: f.InfoHash(),
+			MyPeerID: tcptracker.MyPeerID,
+		}
+		r, err := t.Announce()
+		if err != nil {
+			return err
+		}
+		yaml.NewEncoder(os.Stdout).Encode(r)
+	} else if u.Scheme == "udp" {
+		t := udptracker.UDPTracker{
+			Address:  tracker,
+			InfoHash: f.InfoHash(),
+			MyPeerID: tcptracker.MyPeerID,
+		}
+		r, err := t.Announce()
+		if err != nil {
+			return err
+		}
+		yaml.NewEncoder(os.Stdout).Encode(r)
+	} else {
+		return fmt.Errorf("invalid tracker protocol")
 	}
-	r := t.Announce(f.InfoHash(), f.Length)
-	if len(r.Peers) == 0 {
-		return fmt.Errorf("no peers")
-	}
-	fmt.Println(len(r.Peers))
+
 	return nil
 }

@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/movsb/torrent/message"
-	"github.com/movsb/torrent/tracker"
+	tcptracker "github.com/movsb/torrent/tracker/tcp"
 )
 
 // Client ...
 type Client struct {
-	Peer     tracker.Peer
+	Peer     tcptracker.Peer
 	InfoHash [20]byte
 
 	conn net.Conn
@@ -57,7 +57,7 @@ func (c *Client) Handshake() error {
 
 	handshake := message.Handshake{
 		InfoHash:  c.InfoHash,
-		MyPeerID:  tracker.MyPeerID,
+		MyPeerID:  tcptracker.MyPeerID,
 		HerPeerID: c.Peer.ID,
 	}
 

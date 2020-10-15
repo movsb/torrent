@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/movsb/torrent/tracker"
+	tcptracker "github.com/movsb/torrent/tracker/tcp"
 )
 
 // Action ...
@@ -74,7 +74,7 @@ type AnnounceRequest struct {
 	Action        Action
 	TransactionID uint32
 	InfoHash      [20]byte
-	PeerID        tracker.PeerID
+	PeerID        tcptracker.PeerID
 	Downloaded    uint64
 	Left          uint64
 	Uploaded      uint64

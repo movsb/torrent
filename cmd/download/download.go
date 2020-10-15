@@ -8,7 +8,7 @@ import (
 	"github.com/movsb/torrent/file"
 	"github.com/movsb/torrent/message"
 	"github.com/movsb/torrent/peer"
-	"github.com/movsb/torrent/tracker"
+	tracker "github.com/movsb/torrent/tracker/tcp"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +25,6 @@ func AddCommands(root *cobra.Command) {
 }
 
 func downloadTorrent(cmd *cobra.Command, args []string) error {
-
 	f, err := file.ParseFile(args[0])
 	if err != nil {
 		return err
@@ -36,12 +35,13 @@ func downloadTorrent(cmd *cobra.Command, args []string) error {
 		trackerURL = t
 	}
 
-	t := tracker.Tracker{
-		URL: trackerURL,
+	t := tracker.TCPTracker{
+		Address:  trackerURL,
+		InfoHash: f.InfoHash(),
 	}
-	r := t.Announce(f.InfoHash(), f.Length)
-	if len(r.Peers) == 0 {
-		return fmt.Errorf("no peers")
+	r, err := t.Announce()
+	if err != nil {
+		return err
 	}
 
 	nPieces := f.PieceHashes.Len()
