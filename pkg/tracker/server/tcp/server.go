@@ -2,11 +2,13 @@ package tcptrackerserver
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	trackercommon "github.com/movsb/torrent/pkg/tracker/common"
@@ -16,26 +18,34 @@ import (
 
 // TCPTrackerServer ...
 type TCPTrackerServer struct {
-	Address string
-	Path    string
-
-	cache *_PeerCache
+	endpoint string
+	cache    *_PeerCache
 }
 
 // NewTCPTrackerServer ...
 func NewTCPTrackerServer(endpoint string) *TCPTrackerServer {
 	return &TCPTrackerServer{
-		cache: _NewPeerCache(),
+		endpoint: endpoint,
+		cache:    _NewPeerCache(),
 	}
 }
 
 // Run ...
 func (s *TCPTrackerServer) Run(ctx context.Context) error {
+	endpoint := s.endpoint
+	if !strings.Contains(endpoint, "://") {
+		endpoint = "http://" + endpoint
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return err
+	}
+
 	mux := http.NewServeMux()
-	mux.HandleFunc(s.Path, s.handleAnnounce)
+	mux.HandleFunc(filepath.Join(`/`, u.Path), s.handleAnnounce)
 
 	hs := http.Server{
-		Addr:    s.Address,
+		Addr:    u.Host,
 		Handler: mux,
 	}
 
@@ -58,8 +68,9 @@ func (s *TCPTrackerServer) Run(ctx context.Context) error {
 		close(c)
 		go func() {
 			<-ctx.Done()
-			hs.Shutdown()
+			hs.Shutdown(context.Background())
 		}()
+		return nil
 	}
 }
 
@@ -69,7 +80,6 @@ func (s *TCPTrackerServer) handleAnnounce(w http.ResponseWriter, r *http.Request
 		bencode.NewEncoder(w).Encode(
 			&trackercommon.AnnounceResponse{
 				FailureReason: err.Error(),
-				Interval:      60,
 			},
 		)
 	}
@@ -95,19 +105,17 @@ func (s *TCPTrackerServer) handleAnnounce(w http.ResponseWriter, r *http.Request
 
 	paramFuncs := map[string]func(value string) error{
 		`info_hash`: func(value string) error {
-			b, err := hex.DecodeString(value)
-			if err != nil || len(b) != 20 {
+			if len(value) != 20 {
 				return fmt.Errorf("invalid info_hash")
 			}
-			copy(infoHash[:], b)
+			copy(infoHash[:], value)
 			return nil
 		},
 		`peer_id`: func(value string) error {
-			b, err := hex.DecodeString(value)
-			if err != nil || len(b) != 20 {
+			if len(value) != 20 {
 				return fmt.Errorf("invalid peer_id")
 			}
-			copy(peerID[:], b)
+			copy(peerID[:], value)
 			return nil
 		},
 		`port`: func(value string) error {

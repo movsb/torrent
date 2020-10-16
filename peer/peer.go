@@ -17,7 +17,7 @@ import (
 
 // Client ...
 type Client struct {
-	Peer     tcptracker.Peer
+	Peer     string
 	InfoHash [20]byte
 
 	conn net.Conn
@@ -43,12 +43,11 @@ func (c *Client) Close() error {
 
 // Handshake ...
 func (c *Client) Handshake() error {
-	peerAddr := fmt.Sprintf("%s:%d", c.Peer.IP, c.Peer.Port)
-	conn, err := net.DialTimeout("tcp", peerAddr, time.Second*3)
+	conn, err := net.DialTimeout("tcp", c.Peer, time.Second*3)
 	if err != nil {
 		return fmt.Errorf("client: handshake failed: %v", err)
 	}
-	fmt.Println(`peer: `, peerAddr)
+	fmt.Println(`peer: `, c.Peer)
 	c.conn = conn
 	c.rw = bufio.NewReadWriter(
 		bufio.NewReader(conn),
@@ -56,9 +55,9 @@ func (c *Client) Handshake() error {
 	)
 
 	handshake := message.Handshake{
-		InfoHash:  c.InfoHash,
-		MyPeerID:  tcptracker.MyPeerID,
-		HerPeerID: c.Peer.ID,
+		InfoHash: c.InfoHash,
+		MyPeerID: tcptracker.MyPeerID,
+		//HerPeerID: c.Peer.ID,
 	}
 
 	b, err := handshake.Marshal()
@@ -182,7 +181,7 @@ keepalive:
 func (c *Client) Download(pending chan SinglePieceData, done chan SinglePieceData) error {
 	for piece := range pending {
 		if !c.bitField.HasPiece(piece.Index) {
-			fmt.Printf("client %s doesn't have piece %d\n", c.Peer.ID, piece.Index)
+			fmt.Printf("client %s doesn't have piece %d\n", c.Peer, piece.Index)
 			pending <- piece
 			time.Sleep(time.Millisecond * 500)
 			continue

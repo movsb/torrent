@@ -29,11 +29,26 @@ func (p Peer) String() string {
 // PeerID ...
 type PeerID [PeerIDLength]byte
 
+// MarshalBencode ...
+func (p PeerID) MarshalBencode() ([]byte, error) {
+	b := make([]byte, 3+PeerIDLength)
+	b[0] = '2'
+	b[1] = '0'
+	b[2] = ':'
+	copy(b[3:], p[:])
+	return b, nil
+}
+
 func (p PeerID) String() string {
-	b, _ := json.Marshal(p)
+	b, _ := json.Marshal(string(p[:]))
 	s := string(b[1 : len(b)-1])
 	s = strings.ReplaceAll(s, `\"`, `"`)
 	return s
+}
+
+// MarshalYAML ...
+func (p PeerID) MarshalYAML() (interface{}, error) {
+	return string(p.String()), nil
 }
 
 // PeerIDLength ...

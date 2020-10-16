@@ -67,11 +67,11 @@ func (m *Handshake) Unmarshal(r []byte) error {
 
 	start = handshakePeerIDStart
 	recv = r[start : start+tracker.PeerIDLength]
-	if !bytes.Equal(m.HerPeerID[:], recv) {
-		fmt.Println(m.HerPeerID)
-		fmt.Println(recv)
-		return fmt.Errorf("handshake: peer id mismatch")
-	}
+	// if !bytes.Equal(m.HerPeerID[:], recv) {
+	// 	fmt.Println(m.HerPeerID)
+	// 	fmt.Println(recv)
+	// 	return fmt.Errorf("handshake: peer id mismatch")
+	// }
 
 	return nil
 }

@@ -25,6 +25,13 @@ func AddCommands(root *cobra.Command) {
 		RunE: testTracker,
 	}
 	trackerCmd.AddCommand(testCmd)
+
+	runServerCmd := &cobra.Command{
+		Use:  `server <endpoint>`,
+		Args: cobra.ExactArgs(1),
+		RunE: runServer,
+	}
+	trackerCmd.AddCommand(runServerCmd)
 }
 
 func testTracker(cmd *cobra.Command, args []string) error {

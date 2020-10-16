@@ -2,6 +2,7 @@ package download
 
 import (
 	"fmt"
+	"net/url"
 	"sync"
 	"sync/atomic"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/movsb/torrent/message"
 	"github.com/movsb/torrent/peer"
 	tracker "github.com/movsb/torrent/tracker/tcp"
+	udptracker "github.com/movsb/torrent/tracker/udp"
 	"github.com/spf13/cobra"
 )
 
@@ -35,13 +37,37 @@ func downloadTorrent(cmd *cobra.Command, args []string) error {
 		trackerURL = t
 	}
 
-	t := tracker.TCPTracker{
-		Address:  trackerURL,
-		InfoHash: f.InfoHash(),
-	}
-	r, err := t.Announce()
+	u, err := url.Parse(trackerURL)
 	if err != nil {
 		return err
+	}
+
+	var peers []string
+
+	switch u.Scheme {
+	case "http", "https":
+		t := tracker.TCPTracker{
+			Address:  trackerURL,
+			InfoHash: f.InfoHash(),
+		}
+		r, err := t.Announce()
+		if err != nil {
+			return err
+		}
+		for _, p := range r.Peers {
+			peers = append(peers, fmt.Sprintf("%s:%d", p.IP, p.Port))
+		}
+	case "udp":
+		t := udptracker.UDPTracker{
+			Address:  trackerURL,
+			InfoHash: f.InfoHash(),
+			MyPeerID: tracker.MyPeerID,
+		}
+		r, err := t.Announce()
+		if err != nil {
+			return err
+		}
+		peers = r.Peers
 	}
 
 	nPieces := f.PieceHashes.Len()
@@ -68,11 +94,11 @@ func downloadTorrent(cmd *cobra.Command, args []string) error {
 
 	wg := &sync.WaitGroup{}
 
-	nClient := int32(len(r.Peers))
+	nClient := int32(len(peers))
 
-	for _, p := range r.Peers {
+	for _, p := range peers {
 		wg.Add(1)
-		go func(p tracker.Peer) {
+		go func(p string) {
 			defer func() {
 				wg.Done()
 				atomic.AddInt32(&nClient, -1)
@@ -127,7 +153,10 @@ func downloadTorrent(cmd *cobra.Command, args []string) error {
 		}
 		donePieces++
 		percent := float64(donePieces) / float64(f.PieceHashes.Len()) * 100
-		fmt.Printf("%0.2f%% piece downloaded: %d / %d from %d peers\n", percent, donePieces, nPieces, atomic.LoadInt32(&nClient))
+		fmt.Printf("%0.2f piece downloaded: %d / %d | %d / %d from %d peers\n",
+			percent, donePieces, nPieces,
+			donePieces*f.PieceLength, f.Length,
+			atomic.LoadInt32(&nClient))
 	}
 
 	close(chPieces)

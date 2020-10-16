@@ -21,6 +21,9 @@ func _NewPeerCache() *_PeerCache {
 func (c *_PeerCache) Add(ih [20]byte, peerID tracker.PeerID, ip string, port int) []_PeerCacheEntry {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.m[ih] == nil {
+		c.m[ih] = make(map[string]_PeerCacheEntry)
+	}
 	c.m[ih][fmt.Sprintf("%s:%d", ip, port)] = _PeerCacheEntry{
 		PeerID: peerID,
 		IP:     ip,
