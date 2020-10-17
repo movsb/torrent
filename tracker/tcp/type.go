@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -65,4 +66,9 @@ func (p *PeerID) UnmarshalBencode(r []byte) error {
 	}
 	copy(p[:], []byte(id))
 	return nil
+}
+
+// Equal ...
+func (p PeerID) Equal(other PeerID) bool {
+	return bytes.Equal(p[:], other[:])
 }

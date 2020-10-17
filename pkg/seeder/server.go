@@ -7,11 +7,27 @@ import (
 	"github.com/movsb/torrent/file"
 	"github.com/movsb/torrent/message"
 	"github.com/movsb/torrent/peer"
+	"github.com/movsb/torrent/pkg/common"
+	tracker "github.com/movsb/torrent/tracker/tcp"
 )
+
+type LoadInfo struct {
+	TF  *file.File
+	IFM *peer.IndexFileManager
+	BF  *message.BitField
+}
+
+type LoadTorrent interface {
+	LoadTorrent(ih common.InfoHash) (*LoadInfo, error)
+	AddClient(ih common.InfoHash, client *peer.Client)
+}
 
 // Server ...
 type Server struct {
-	Address string
+	Address  string
+	MyPeerID tracker.PeerID
+
+	LoadTorrent LoadTorrent
 }
 
 // Run ...
@@ -32,32 +48,54 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) handle(conn net.Conn) {
-	defer conn.Close()
+	closeConn := conn
 
-	tf, err := file.ParseFile(`8ce301d28fe97eed1a6ef7feaf296411b375222f.torrent`)
+	defer func() {
+		if closeConn != nil {
+			closeConn.Close()
+		}
+	}()
+
+	var (
+		err error
+		li  *LoadInfo
+	)
+
+	handshake, err := peer.HandshakeIncoming(
+		conn, 10, tracker.MyPeerID,
+		func(m *message.Handshake) error {
+			if s.MyPeerID.Equal(m.PeerID) {
+				fmt.Printf("self connect")
+				return fmt.Errorf("self connect")
+			}
+			li, err = s.LoadTorrent.LoadTorrent(m.InfoHash)
+			if err != nil {
+				return err
+			}
+			return nil
+		},
+	)
+
 	if err != nil {
-		panic(err)
-	}
-
-	ifm := peer.NewIndexFileManager(tf.Name, tf.Single, tf.Files, tf.PieceLength, tf.PieceHashes)
-	bf := message.NewBitField(tf.PieceHashes.Len(), 0xFF)
-
-	c := peer.Client{
-		Ifm:         ifm,
-		MyBitField:  bf,
-		HerBitField: message.NewBitField(tf.PieceHashes.Len(), 0),
-		InfoHash:    tf.InfoHash(),
-	}
-	c.SetConn(conn)
-	if err := c.Handshake2(); err != nil {
-		panic(err)
-	}
-
-	if err := c.Send(message.MsgBitField, bf); err != nil {
-		fmt.Printf("error send bf: %v\n", err)
+		fmt.Printf("HandshakeIncoming failed: %v", err)
 		return
 	}
 
+	c := peer.Client{
+		HerPeerID:   handshake.PeerID,
+		Ifm:         li.IFM,
+		MyBitField:  li.BF,
+		HerBitField: message.NewBitField(li.TF.PieceHashes.Len(), 0),
+		InfoHash:    li.TF.InfoHash(),
+		PeerAddr:    conn.RemoteAddr().String(),
+	}
+
+	c.SetConn(conn)
+
+	if err := c.Send(message.MsgBitField, li.BF); err != nil {
+		fmt.Printf("error send bitbield: %v\n", err)
+		return
+	}
 	if err := c.Send(message.MsgUnChoke, message.UnChoke{}); err != nil {
 		fmt.Printf("error send unchoked: %v\n", err)
 	}
@@ -65,8 +103,7 @@ func (s *Server) handle(conn net.Conn) {
 		fmt.Printf("error send unchoked: %v\n", err)
 	}
 
-	if err := c.Download(nil, nil); err != nil {
-		fmt.Printf("error download: %v", err)
-		return
-	}
+	closeConn = nil
+
+	s.LoadTorrent.AddClient(handshake.InfoHash, &c)
 }

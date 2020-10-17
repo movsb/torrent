@@ -9,24 +9,30 @@ import (
 	"io"
 	"log"
 	"net"
+	"reflect"
 	"time"
 
 	"github.com/movsb/torrent/message"
-	tcptracker "github.com/movsb/torrent/tracker/tcp"
+	"github.com/movsb/torrent/pkg/common"
+	tracker "github.com/movsb/torrent/tracker/tcp"
 )
 
 // Client ...
 type Client struct {
-	Peer     string
-	InfoHash [20]byte
+	InfoHash  common.InfoHash
+	HerPeerID tracker.PeerID
+	PeerAddr  string
+	conn      net.Conn
 
-	conn net.Conn
-	rw   *bufio.ReadWriter
+	rw *bufio.ReadWriter
 
 	MyBitField  *message.BitField
 	HerBitField *message.BitField
 
 	Ifm *IndexFileManager
+
+	msgch    chan message.Message
+	curPiece *SinglePieceData
 
 	unchoked   bool
 	downloaded int
@@ -34,13 +40,16 @@ type Client struct {
 	backlog    int
 }
 
-// this is temp
+// tmp
 func (c *Client) SetConn(conn net.Conn) {
 	c.conn = conn
 	c.rw = bufio.NewReadWriter(
 		bufio.NewReader(conn),
 		bufio.NewWriter(conn),
 	)
+
+	// TODO(movsb): init
+	c.msgch = make(chan message.Message, 1)
 }
 
 // Close ...
@@ -49,72 +58,6 @@ func (c *Client) Close() error {
 		c.rw.Flush()
 		c.conn.Close()
 		c.conn = nil
-	}
-	return nil
-}
-
-// Handshake ...
-func (c *Client) Handshake() error {
-	conn, err := net.DialTimeout("tcp", c.Peer, time.Second*3)
-	if err != nil {
-		return fmt.Errorf("client: handshake failed: %v", err)
-	}
-	fmt.Println(`peer: `, c.Peer)
-	c.conn = conn
-	c.rw = bufio.NewReadWriter(
-		bufio.NewReader(conn),
-		bufio.NewWriter(conn),
-	)
-
-	handshake := message.Handshake{
-		InfoHash: c.InfoHash,
-		MyPeerID: tcptracker.MyPeerID,
-		//HerPeerID: c.Peer.ID,
-	}
-
-	b, err := handshake.Marshal()
-	if err != nil {
-		return fmt.Errorf("client: send: %v", err)
-	}
-	if _, err := c.rw.Write(b); err != nil {
-		return fmt.Errorf("client: send: %v", err)
-	}
-	if err := c.rw.Flush(); err != nil {
-		return fmt.Errorf("client: send: %v", err)
-	}
-	b = make([]byte, message.HandshakeLength)
-	if _, err = io.ReadFull(c.rw, b); err != nil {
-		return fmt.Errorf("client: read handshake: %v", err)
-	}
-	if err := handshake.Unmarshal(b); err != nil {
-		return fmt.Errorf("client: send: %v", err)
-	}
-	return nil
-}
-
-// Handshake2 ...
-func (c *Client) Handshake2() error {
-	b := make([]byte, message.HandshakeLength)
-	if _, err := io.ReadFull(c.rw, b); err != nil {
-		return fmt.Errorf("client: read handshake: %v", err)
-	}
-	handshake := message.Handshake{
-		InfoHash: c.InfoHash,
-		MyPeerID: tcptracker.MyPeerID,
-	}
-	handshake.Marshal()
-	if err := handshake.Unmarshal(b); err != nil {
-		return fmt.Errorf("client: send: %v", err)
-	}
-	b, err := handshake.Marshal()
-	if err != nil {
-		return fmt.Errorf("client: send: %v", err)
-	}
-	if _, err := c.rw.Write(b); err != nil {
-		return fmt.Errorf("client: send: %v", err)
-	}
-	if err := c.rw.Flush(); err != nil {
-		return fmt.Errorf("client: send: %v", err)
 	}
 	return nil
 }
@@ -143,7 +86,7 @@ func (c *Client) Send(msgID message.MsgID, req message.Marshaler) error {
 }
 
 // Recv ...
-func (c *Client) Recv() (message.MsgID, message.Unmarshaler, error) {
+func (c *Client) Recv() (message.MsgID, message.Message, error) {
 	sizeBuf := []byte{0, 0, 0, 0}
 	if _, err := io.ReadFull(c.rw, sizeBuf); err != nil {
 		return 0, nil, fmt.Errorf("client: recv size: %v", err)
@@ -152,7 +95,7 @@ func (c *Client) Recv() (message.MsgID, message.Unmarshaler, error) {
 	msgSize := binary.BigEndian.Uint32(sizeBuf)
 	// keep alive
 	if msgSize == 0 {
-		log.Printf("keep alive from: %v", c.Peer)
+		log.Printf("keep alive from: %v", c.HerPeerID)
 		return 0, nil, nil
 	}
 	if msgSize > 1<<20 {
@@ -166,7 +109,7 @@ func (c *Client) Recv() (message.MsgID, message.Unmarshaler, error) {
 
 	var (
 		msgID = message.MsgID(buf[0])
-		msg   message.Unmarshaler
+		msg   message.Message
 	)
 
 	switch msgID {
@@ -214,23 +157,48 @@ keepalive:
 		return fmt.Errorf("recv non-bitfield message")
 	}
 	c.HerBitField = msg.(*message.BitField)
+	c.HerBitField.Init(c.Ifm.PieceCount())
 	return nil
 }
 
 // Download ...
 func (c *Client) Download(pending chan SinglePieceData, done chan SinglePieceData) error {
+	go func() {
+		for {
+			id, msg, err := c.Recv()
+			if err != nil {
+				fmt.Printf("client: read message failed: %v\n", err)
+				return
+			}
+			if msg == nil {
+				fmt.Printf("keep alive\n")
+				continue
+			}
+			_ = id
+			c.msgch <- msg
+		}
+	}()
 	if pending == nil {
 		for {
-			if err := c.readMessage(nil); err != nil {
-				return err
+			select {
+			case msg := <-c.msgch:
+				c.readMessage(msg)
 			}
 		}
 		return nil
 	}
 	for piece := range pending {
+		c.curPiece = &piece
 		if !c.HerBitField.HasPiece(piece.Index) {
-			fmt.Printf("client %s doesn't have piece %d\n", c.Peer, piece.Index)
+			fmt.Printf("client %s doesn't have piece %d\n", c.HerPeerID, piece.Index)
 			pending <- piece
+
+			select {
+			case msg := <-c.msgch:
+				c.readMessage(msg)
+				continue
+			default:
+			}
 			time.Sleep(time.Millisecond * 500)
 			continue
 		}
@@ -244,11 +212,12 @@ func (c *Client) Download(pending chan SinglePieceData, done chan SinglePieceDat
 		if err := c.checkIntegrity(&piece); err != nil {
 			fmt.Printf("check integrity failed: %v\n", err)
 			pending <- piece
-			time.Sleep(time.Millisecond * 500)
-			continue
+			return fmt.Errorf("check integrity failed: %v", err)
 		}
 
+		// TODO(movsb): send this to all peers.
 		c.Send(message.MsgHave, &message.Have{Index: piece.Index})
+		c.MyBitField.SetPiece(piece.Index)
 
 		done <- piece
 	}
@@ -287,40 +256,32 @@ func (c *Client) downloadPiece(piece *SinglePieceData) error {
 			}
 		}
 
-		if err := c.readMessage(piece); err != nil {
-			return fmt.Errorf("read message failed: %v", err)
+		select {
+		case msg := <-c.msgch:
+			c.readMessage(msg)
 		}
 	}
 
 	return nil
 }
 
-func (c *Client) readMessage(piece *SinglePieceData) error {
-	id, msg, err := c.Recv()
-	if err != nil {
-		return fmt.Errorf("client: read message failed: %v", err)
-	}
-	if msg == nil {
-		fmt.Printf("keep alive\n")
-		return nil
-	}
-
-	switch id {
+func (c *Client) readMessage(msg message.Message) error {
+	piece := c.curPiece
+	switch typed := msg.(type) {
 	default:
-		return fmt.Errorf("peer sent unknown message: %v", id)
-	case message.MsgChoke:
+		return fmt.Errorf("peer sent unknown message: %v", reflect.TypeOf(typed).String())
+	case *message.Choke:
 		c.unchoked = false
 		fmt.Printf("peer choked\n")
-	case message.MsgUnChoke:
+	case *message.UnChoke:
 		c.unchoked = true
 		fmt.Printf("peer not choked\n")
-	case message.MsgInterested:
+	case *message.Interested:
 		fmt.Printf("peer interested\n")
-	case message.MsgHave:
-		have := msg.(*message.Have)
-		c.HerBitField.SetPiece(have.Index)
-		fmt.Printf("peer has piece %d\n", have.Index)
-	case message.MsgRequest:
+	case *message.Have:
+		c.HerBitField.SetPiece(typed.Index)
+		fmt.Printf("peer has piece %d\n", typed.Index)
+	case *message.Request:
 		request := msg.(*message.Request)
 		if !c.MyBitField.HasPiece(request.Index) {
 			fmt.Printf("peer requests piece I don't have: %d", request.Index)
@@ -344,12 +305,8 @@ func (c *Client) readMessage(piece *SinglePieceData) error {
 			break
 		}
 		fmt.Printf("upload piece: %d\n", request.Index)
-	case message.MsgPiece:
+	case *message.Piece:
 		pieceRecv := msg.(*message.Piece)
-		if piece == nil {
-			fmt.Printf("peer sent piece I'm not requesting: %d", pieceRecv.Index)
-			break
-		}
 		if pieceRecv.Index != piece.Index {
 			return fmt.Errorf("peer sent unknown piece index %d", pieceRecv.Index)
 		}

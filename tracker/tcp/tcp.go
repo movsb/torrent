@@ -20,7 +20,7 @@ var MyPeerID = makePeerID()
 
 func makePeerID() PeerID {
 	var id PeerID
-	copy(id[:], []byte(`dev-bt12345678123456`))
+	copy(id[:], []byte(`dev-bt12345678123457`))
 	return id
 }
 

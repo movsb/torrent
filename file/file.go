@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 
+	"github.com/movsb/torrent/pkg/common"
 	"github.com/zeebo/bencode"
 )
 
@@ -115,11 +116,11 @@ type File struct {
 	PieceHashes PieceHashes
 
 	rawInfo  bencode.RawMessage
-	infoHash Hash
+	infoHash common.InfoHash
 }
 
 // InfoHash ...
-func (f *File) InfoHash() Hash {
+func (f *File) InfoHash() common.InfoHash {
 	return f.infoHash
 }
 

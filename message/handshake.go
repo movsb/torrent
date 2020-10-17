@@ -5,15 +5,14 @@ import (
 	"crypto/sha1"
 	"fmt"
 
+	"github.com/movsb/torrent/pkg/common"
 	tracker "github.com/movsb/torrent/tracker/tcp"
 )
 
 // Handshake ...
 type Handshake struct {
-	InfoHash  [sha1.Size]byte
-	MyPeerID  tracker.PeerID
-	HerPeerID tracker.PeerID
-	data      []byte
+	InfoHash common.InfoHash
+	PeerID   tracker.PeerID
 }
 
 var _ Marshaler = &Handshake{}
@@ -30,48 +29,40 @@ var (
 	handshakePeerIDStart   = HandshakeLength - tracker.PeerIDLength
 )
 
-func (m *Handshake) marshal() error {
+// Marshal ...
+func (m *Handshake) Marshal() ([]byte, error) {
 	b := bytes.NewBuffer(nil)
 	b.Grow(HandshakeLength)
 	b.WriteByte(handshakeStart)
 	b.WriteString(handshakeString)
 	b.Write(handshakeReserved[:])
 	b.Write(m.InfoHash[:])
-	b.Write(m.MyPeerID[:])
-	m.data = b.Bytes()
-	return nil
-}
-
-// Marshal ...
-func (m *Handshake) Marshal() ([]byte, error) {
-	if len(m.data) == 0 {
-		if err := m.marshal(); err != nil {
-			return nil, err
-		}
-	}
-	return m.data, nil
+	b.Write(m.PeerID[:])
+	return b.Bytes(), nil
 }
 
 // Unmarshal ...
 func (m *Handshake) Unmarshal(r []byte) error {
 	if len(r) != HandshakeLength {
-		return fmt.Errorf("handshake: length error")
+		return fmt.Errorf("handshake: invalid length")
+	}
+
+	if startChar := r[0]; startChar != handshakeStart {
+		return fmt.Errorf("handshake: invalid start character: %d", startChar)
+	}
+	if btProto := string(r[1 : 1+19]); btProto != handshakeString {
+		return fmt.Errorf("handshake: invalid protocol: %s", btProto)
+	}
+	if reserved := r[20 : 20+8]; !bytes.Equal(reserved, handshakeReserved[:]) {
+		fmt.Printf("handshake: invalid reserved: %x\n", reserved)
+		// return fmt.Errorf("handshake: invalid reserved: %x", reserved)
 	}
 
 	start := handshakeInfoHashStart
-	sent := m.data[start : start+sha1.Size]
-	recv := r[start : start+sha1.Size]
-	if !bytes.Equal(sent, recv) {
-		return fmt.Errorf("handshake: info hash mismatch")
-	}
+	copy(m.InfoHash[:], r[start:start+sha1.Size])
 
 	start = handshakePeerIDStart
-	recv = r[start : start+tracker.PeerIDLength]
-	// if !bytes.Equal(m.HerPeerID[:], recv) {
-	// 	fmt.Println(m.HerPeerID)
-	// 	fmt.Println(recv)
-	// 	return fmt.Errorf("handshake: peer id mismatch")
-	// }
+	copy(m.PeerID[:], r[start:start+tracker.PeerIDLength])
 
 	return nil
 }

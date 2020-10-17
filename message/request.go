@@ -8,7 +8,7 @@ import (
 // MaxRequestLength ...
 // All current implementations use 2^14 (16 kiB), and close connections
 // which request an amount greater than that.
-const MaxRequestLength = 512 << 10
+const MaxRequestLength = 16 << 10
 
 // Request ...
 type Request struct {

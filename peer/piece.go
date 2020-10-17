@@ -101,6 +101,11 @@ func (p *IndexFileManager) Close() error {
 	return lastErr
 }
 
+// PieceCount ...
+func (p *IndexFileManager) PieceCount() int {
+	return p.hashes.Len()
+}
+
 // ReadPiece ...
 // TODO merge read & write.
 func (p *IndexFileManager) ReadPiece(index int) ([]byte, error) {

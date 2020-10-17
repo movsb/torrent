@@ -1,5 +1,11 @@
 package message
 
+// Message ...
+type Message interface {
+	Marshaler
+	Unmarshaler
+}
+
 // Marshaler ...
 type Marshaler interface {
 	Marshal() ([]byte, error)
