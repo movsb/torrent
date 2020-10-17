@@ -7,8 +7,7 @@ import (
 
 func TestTCPTrackerServer(t *testing.T) {
 	s := TCPTrackerServer{
-		Address: `localhost:9999`,
-		Path:    `/announce`,
+		endpoint: `localhost:9999/announce`,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

@@ -1,7 +1,6 @@
 package message
 
 import (
-	"fmt"
 	"log"
 )
 
@@ -13,9 +12,24 @@ type BitField struct {
 var _ Marshaler = &BitField{}
 var _ Unmarshaler = &BitField{}
 
+// NewBitField ...
+func NewBitField(pieceCount int, value byte) *BitField {
+	byteCount := pieceCount / 8
+	if pieceCount%8 != 0 {
+		byteCount++
+	}
+	bytes := make([]byte, byteCount)
+	for i := 0; i < byteCount; i++ {
+		bytes[i] = value
+	}
+	return &BitField{
+		Fields: bytes,
+	}
+}
+
 // Marshal ...
 func (m *BitField) Marshal() ([]byte, error) {
-	return nil, fmt.Errorf(`not implemented`)
+	return m.Fields, nil
 }
 
 // Unmarshal ...

@@ -23,12 +23,24 @@ type Client struct {
 	conn net.Conn
 	rw   *bufio.ReadWriter
 
-	bitField message.BitField
+	MyBitField  *message.BitField
+	HerBitField *message.BitField
+
+	Ifm *IndexFileManager
 
 	unchoked   bool
 	downloaded int
 	requested  int
 	backlog    int
+}
+
+// this is temp
+func (c *Client) SetConn(conn net.Conn) {
+	c.conn = conn
+	c.rw = bufio.NewReadWriter(
+		bufio.NewReader(conn),
+		bufio.NewWriter(conn),
+	)
 }
 
 // Close ...
@@ -75,6 +87,33 @@ func (c *Client) Handshake() error {
 		return fmt.Errorf("client: read handshake: %v", err)
 	}
 	if err := handshake.Unmarshal(b); err != nil {
+		return fmt.Errorf("client: send: %v", err)
+	}
+	return nil
+}
+
+// Handshake2 ...
+func (c *Client) Handshake2() error {
+	b := make([]byte, message.HandshakeLength)
+	if _, err := io.ReadFull(c.rw, b); err != nil {
+		return fmt.Errorf("client: read handshake: %v", err)
+	}
+	handshake := message.Handshake{
+		InfoHash: c.InfoHash,
+		MyPeerID: tcptracker.MyPeerID,
+	}
+	handshake.Marshal()
+	if err := handshake.Unmarshal(b); err != nil {
+		return fmt.Errorf("client: send: %v", err)
+	}
+	b, err := handshake.Marshal()
+	if err != nil {
+		return fmt.Errorf("client: send: %v", err)
+	}
+	if _, err := c.rw.Write(b); err != nil {
+		return fmt.Errorf("client: send: %v", err)
+	}
+	if err := c.rw.Flush(); err != nil {
 		return fmt.Errorf("client: send: %v", err)
 	}
 	return nil
@@ -146,6 +185,7 @@ func (c *Client) Recv() (message.MsgID, message.Unmarshaler, error) {
 	case message.MsgBitField:
 		msg = &message.BitField{}
 	case message.MsgRequest:
+		msg = &message.Request{}
 	case message.MsgPiece:
 		msg = &message.Piece{}
 	case message.MsgCancel:
@@ -173,14 +213,22 @@ keepalive:
 		log.Printf("recv non-bitfield message: %v", id)
 		return fmt.Errorf("recv non-bitfield message")
 	}
-	c.bitField = *msg.(*message.BitField)
+	c.HerBitField = msg.(*message.BitField)
 	return nil
 }
 
 // Download ...
 func (c *Client) Download(pending chan SinglePieceData, done chan SinglePieceData) error {
+	if pending == nil {
+		for {
+			if err := c.readMessage(nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	for piece := range pending {
-		if !c.bitField.HasPiece(piece.Index) {
+		if !c.HerBitField.HasPiece(piece.Index) {
 			fmt.Printf("client %s doesn't have piece %d\n", c.Peer, piece.Index)
 			pending <- piece
 			time.Sleep(time.Millisecond * 500)
@@ -266,12 +314,42 @@ func (c *Client) readMessage(piece *SinglePieceData) error {
 	case message.MsgUnChoke:
 		c.unchoked = true
 		fmt.Printf("peer not choked\n")
+	case message.MsgInterested:
+		fmt.Printf("peer interested\n")
 	case message.MsgHave:
 		have := msg.(*message.Have)
-		c.bitField.SetPiece(have.Index)
+		c.HerBitField.SetPiece(have.Index)
 		fmt.Printf("peer has piece %d\n", have.Index)
+	case message.MsgRequest:
+		request := msg.(*message.Request)
+		if !c.MyBitField.HasPiece(request.Index) {
+			fmt.Printf("peer requests piece I don't have: %d", request.Index)
+			break
+		}
+		piece, err := c.Ifm.ReadPiece(request.Index)
+		if err != nil {
+			fmt.Printf("read piece failed: %d, %v", request.Index, err)
+			break
+		}
+		if request.Begin+request.Length > len(piece) {
+			fmt.Printf("peer requests piece out of bound: %d", request.Index)
+			break
+		}
+		if err := c.Send(message.MsgPiece, &message.Piece{
+			Index: request.Index,
+			Begin: request.Begin,
+			Data:  piece[request.Begin : request.Begin+request.Length],
+		}); err != nil {
+			fmt.Printf("error sent piece: %v", err)
+			break
+		}
+		fmt.Printf("upload piece: %d\n", request.Index)
 	case message.MsgPiece:
 		pieceRecv := msg.(*message.Piece)
+		if piece == nil {
+			fmt.Printf("peer sent piece I'm not requesting: %d", pieceRecv.Index)
+			break
+		}
 		if pieceRecv.Index != piece.Index {
 			return fmt.Errorf("peer sent unknown piece index %d", pieceRecv.Index)
 		}

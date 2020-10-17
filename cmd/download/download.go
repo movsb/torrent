@@ -3,6 +3,7 @@ package download
 import (
 	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -35,6 +36,10 @@ func downloadTorrent(cmd *cobra.Command, args []string) error {
 	trackerURL := f.Announce
 	if t, _ := cmd.Flags().GetString("tracker"); t != "" {
 		trackerURL = t
+	}
+
+	if !strings.Contains(trackerURL, "://") {
+		trackerURL = "http://" + trackerURL
 	}
 
 	u, err := url.Parse(trackerURL)
@@ -96,6 +101,8 @@ func downloadTorrent(cmd *cobra.Command, args []string) error {
 
 	nClient := int32(len(peers))
 
+	ifm := peer.NewIndexFileManager(f.Name, f.Single, f.Files, f.PieceLength, f.PieceHashes)
+
 	for _, p := range peers {
 		wg.Add(1)
 		go func(p string) {
@@ -105,6 +112,7 @@ func downloadTorrent(cmd *cobra.Command, args []string) error {
 			}()
 
 			c := peer.Client{
+				Ifm:      ifm,
 				Peer:     p,
 				InfoHash: f.InfoHash(),
 			}
@@ -141,8 +149,6 @@ func downloadTorrent(cmd *cobra.Command, args []string) error {
 			fmt.Println(`client exit`)
 		}(p)
 	}
-
-	ifm := peer.NewIndexFileManager(f.Name, f.Single, f.Files, f.PieceLength, f.PieceHashes)
 
 	donePieces := 0
 	for donePieces < nPieces {

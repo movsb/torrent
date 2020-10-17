@@ -120,7 +120,7 @@ func (t *UDPTracker) announce(connectionID uint64) (*AnnounceResponse, error) {
 		IP:            net.IPv4zero,
 		Key:           0,
 		NumWant:       -1,
-		Port:          9999,
+		Port:          8888,
 	}
 	b, err := req.Marshal()
 	if err != nil {

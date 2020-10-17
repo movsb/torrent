@@ -25,7 +25,7 @@ type _IndexedFile struct {
 
 // IndexFileManager ...
 type IndexFileManager struct {
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	name        string
 	single      bool
@@ -99,6 +99,37 @@ func (p *IndexFileManager) Close() error {
 		}
 	}
 	return lastErr
+}
+
+// ReadPiece ...
+// TODO merge read & write.
+func (p *IndexFileManager) ReadPiece(index int) ([]byte, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if err := p.openFiles(index); err != nil {
+		return nil, fmt.Errorf("IndexFileManager.ReadPiece failed: %v", err)
+	}
+
+	offset := 0
+	files := p.piece2files[index]
+	data := make([]byte, p.pieceLength)
+
+	for _, f := range files {
+		fp := p.fds[f.fd]
+		block := data[offset : offset+f.length]
+		_, err := fp.ReadAt(block, f.offset)
+		if err != nil {
+			return nil, fmt.Errorf("IndexFileManager.ReadPiece failed: %v", err)
+		}
+		offset += f.length
+	}
+
+	// if offset != len(data) {
+	// 	return nil, fmt.Errorf("IndexFileManager.ReadPiece: offset != len(data)")
+	// }
+
+	return data, nil
 }
 
 // WritePiece ...

@@ -33,7 +33,7 @@ func (t *TCPTracker) Announce() (*AnnounceResponse, error) {
 	a := url.Values{}
 	a.Set(`info_hash`, string(t.InfoHash[:]))
 	a.Set(`peer_id`, string(MyPeerID[:]))
-	a.Set(`port`, `9999`)
+	a.Set(`port`, `8888`)
 	a.Set(`uploaded`, `0`)
 	a.Set(`downloaded`, `0`)
 	a.Set(`left`, `0`)
