@@ -32,6 +32,7 @@ type Client struct {
 	Ifm *IndexFileManager
 
 	msgch    chan message.Message
+	HaveCh   chan int
 	curPiece *SinglePieceData
 
 	unchoked   bool
@@ -50,6 +51,7 @@ func (c *Client) SetConn(conn net.Conn) {
 
 	// TODO(movsb): init
 	c.msgch = make(chan message.Message, 1)
+	c.HaveCh = make(chan int, 3)
 }
 
 // Close ...
@@ -183,6 +185,10 @@ func (c *Client) Download(pending chan SinglePieceData, done chan SinglePieceDat
 			select {
 			case msg := <-c.msgch:
 				c.readMessage(msg)
+			case have := <-c.HaveCh:
+				if err := c.Send(message.MsgHave, &message.Have{Index: have}); err != nil {
+					fmt.Printf("error send have: %v", err)
+				}
 			}
 		}
 		return nil
@@ -193,13 +199,22 @@ func (c *Client) Download(pending chan SinglePieceData, done chan SinglePieceDat
 			fmt.Printf("client %s doesn't have piece %d\n", c.HerPeerID, piece.Index)
 			pending <- piece
 
+			if have := c.MyBitField.HasPiece(piece.Index); have {
+				if err := c.Send(message.MsgHave, &message.Have{Index: piece.Index}); err != nil {
+					fmt.Printf("error send have: %v", err)
+				}
+			}
+
 			select {
 			case msg := <-c.msgch:
 				c.readMessage(msg)
-				continue
+			case have := <-c.HaveCh:
+				if err := c.Send(message.MsgHave, &message.Have{Index: have}); err != nil {
+					fmt.Printf("error send have: %v", err)
+				}
 			default:
+				time.Sleep(time.Millisecond * 100)
 			}
-			time.Sleep(time.Millisecond * 500)
 			continue
 		}
 
@@ -214,10 +229,6 @@ func (c *Client) Download(pending chan SinglePieceData, done chan SinglePieceDat
 			pending <- piece
 			return fmt.Errorf("check integrity failed: %v", err)
 		}
-
-		// TODO(movsb): send this to all peers.
-		c.Send(message.MsgHave, &message.Have{Index: piece.Index})
-		c.MyBitField.SetPiece(piece.Index)
 
 		done <- piece
 	}
@@ -259,6 +270,10 @@ func (c *Client) downloadPiece(piece *SinglePieceData) error {
 		select {
 		case msg := <-c.msgch:
 			c.readMessage(msg)
+		case have := <-c.HaveCh:
+			if err := c.Send(message.MsgHave, &message.Have{Index: have}); err != nil {
+				fmt.Printf("error send have: %v", err)
+			}
 		}
 	}
 

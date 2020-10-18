@@ -187,6 +187,19 @@ func (t *Task) Run() {
 			if err != nil {
 				panic(fmt.Errorf("WritePiece failed: %s", err))
 			}
+
+			// TODO(movsb): send this to all peers.
+			t.BitField.SetPiece(piece.Index)
+			go func(index int) {
+				t.mu.RLock()
+				defer t.mu.RUnlock()
+
+				for _, client := range t.clients {
+					client.HaveCh <- index
+				}
+
+			}(piece.Index)
+
 			donePieces++
 			percent := float64(donePieces) / float64(t.File.PieceHashes.Len()) * 100
 			fmt.Printf("%0.2f piece downloaded: %d / %d | %d / %d\n",
