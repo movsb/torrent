@@ -9,25 +9,57 @@ import (
 	"github.com/zeebo/bencode"
 )
 
-// InfoHash ...
-type InfoHash [20]byte
+// Hash ...
+type Hash [20]byte
+
+func (h Hash) String() string {
+	return fmt.Sprintf("%x", [20]byte(h))
+}
 
 // Equal ...
-func (ih InfoHash) Equal(other InfoHash) bool {
-	return bytes.Equal(ih[:], other[:])
+func (h *Hash) Equal(other Hash) bool {
+	return bytes.Equal(h[:], other[:])
 }
 
 // Set ...
-func (ih *InfoHash) Set(other []byte) {
+func (h *Hash) Set(other []byte) {
 	if len(other) != 20 {
-		panic("info_hash length must be 20")
+		panic("hash length must be 20")
 	}
-	copy(ih[:], other)
+	copy(h[:], other)
 }
 
 // Copy ...
-func (ih *InfoHash) Copy(other InfoHash) {
-	copy(ih[:], other[:])
+func (h *Hash) Copy(other Hash) {
+	copy(h[:], other[:])
+}
+
+// PieceHashes ...
+type PieceHashes []byte
+
+// Count ...
+func (p PieceHashes) Count() int {
+	return len(p) / 20
+}
+
+// Index ...
+func (p PieceHashes) Index(index int) (h Hash) {
+	if index < 0 || index > p.Count() {
+		panic(fmt.Errorf("invalid piece index: %d", index))
+	}
+
+	s := 20 * index
+	copy(h[:], p[s:s+20])
+	return
+}
+
+// MarshalYAML ...
+func (p PieceHashes) MarshalYAML() (interface{}, error) {
+	list := make([]string, p.Count())
+	for i := 0; i < p.Count(); i++ {
+		list[i] = fmt.Sprintf("%x", p.Index(i))
+	}
+	return list, nil
 }
 
 // PeerID ...

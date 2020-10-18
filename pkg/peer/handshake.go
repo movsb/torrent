@@ -12,7 +12,7 @@ import (
 )
 
 // HandshakeOutgoing ...
-func HandshakeOutgoing(conn net.Conn, timeout int, infoHash common.InfoHash, myPeerID common.PeerID) (*message.Handshake, error) {
+func HandshakeOutgoing(conn net.Conn, timeout int, infoHash common.Hash, myPeerID common.PeerID) (*message.Handshake, error) {
 	defer conn.SetDeadline(time.Time{})
 
 	if err := handshakeSend(conn, timeout, infoHash, myPeerID); err != nil {
@@ -48,7 +48,7 @@ func HandshakeIncoming(conn net.Conn, timeout int, myPeerID common.PeerID, onRec
 	return m, nil
 }
 
-func handshakeSend(conn net.Conn, timeout int, infoHash common.InfoHash, myPeerID common.PeerID) error {
+func handshakeSend(conn net.Conn, timeout int, infoHash common.Hash, myPeerID common.PeerID) error {
 	m := message.Handshake{
 		InfoHash: infoHash,
 		PeerID:   myPeerID,

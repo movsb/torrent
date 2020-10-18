@@ -73,7 +73,7 @@ type AnnounceRequest struct {
 	ConnectionID  uint64
 	Action        Action
 	TransactionID uint32
-	InfoHash      common.InfoHash
+	InfoHash      common.Hash
 	PeerID        common.PeerID
 	Downloaded    uint64
 	Left          uint64

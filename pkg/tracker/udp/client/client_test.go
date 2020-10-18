@@ -4,13 +4,13 @@ import (
 	"os"
 	"testing"
 
-	"github.com/movsb/torrent/file"
+	"github.com/movsb/torrent/pkg/torrent"
 	trackercommon "github.com/movsb/torrent/pkg/tracker/common"
 	"gopkg.in/yaml.v3"
 )
 
 func TestClient(t *testing.T) {
-	f, err := file.ParseFile("../../ubuntu.torrent")
+	f, err := torrent.ParseFile("../../ubuntu.torrent")
 	if err != nil {
 		t.Fatal(err)
 	}

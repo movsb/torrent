@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/movsb/torrent/file"
+	"github.com/movsb/torrent/pkg/torrent"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -61,7 +61,7 @@ func AddCommands(root *cobra.Command) {
 }
 
 func fileInfo(cmd *cobra.Command, args []string) error {
-	tf, err := file.ParseFile(args[0])
+	tf, err := torrent.ParseFile(args[0])
 	if err != nil {
 		log.Println(err)
 		return err
@@ -72,14 +72,14 @@ func fileInfo(cmd *cobra.Command, args []string) error {
 		`Length`:      tf.Length,
 		`FileCount`:   len(tf.Files),
 		`PieceLength`: tf.PieceLength,
-		`PieceCount`:  tf.PieceHashes.Len(),
+		`PieceCount`:  tf.PieceHashes.Count(),
 		`Single`:      tf.Single,
 	})
 	return nil
 }
 
 func fileList(cmd *cobra.Command, args []string) error {
-	tf, err := file.ParseFile(args[0])
+	tf, err := torrent.ParseFile(args[0])
 	if err != nil {
 		log.Println(err)
 		return err
@@ -89,7 +89,7 @@ func fileList(cmd *cobra.Command, args []string) error {
 }
 
 func hashList(cmd *cobra.Command, args []string) error {
-	tf, err := file.ParseFile(args[0])
+	tf, err := torrent.ParseFile(args[0])
 	if err != nil {
 		log.Println(err)
 		return err

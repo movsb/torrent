@@ -20,14 +20,14 @@ import (
 // SinglePieceData ...
 type SinglePieceData struct {
 	Index  int
-	Hash   []byte
+	Hash   common.Hash
 	Length int
 	Data   []byte
 }
 
 // Peer ...
 type Peer struct {
-	InfoHash  common.InfoHash
+	InfoHash  common.Hash
 	HerPeerID common.PeerID
 	PeerAddr  string
 	conn      net.Conn
@@ -349,7 +349,7 @@ func (c *Peer) readMessage(msg message.Message) error {
 
 func (c *Peer) checkIntegrity(piece *SinglePieceData) error {
 	got := sha1.Sum(piece.Data)
-	if !bytes.Equal(piece.Hash, got[:]) {
+	if !bytes.Equal(piece.Hash[:], got[:]) {
 		return fmt.Errorf("check integrity failed")
 	}
 	return nil

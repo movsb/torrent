@@ -14,7 +14,7 @@ import (
 // Client ...
 type Client struct {
 	Address  string
-	InfoHash common.InfoHash
+	InfoHash common.Hash
 	MyPeerID common.PeerID
 }
 

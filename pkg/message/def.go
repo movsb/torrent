@@ -1,6 +1,6 @@
 package message
 
-// Message ...
+// Message is a BitTorrent message sent between peers.
 type Message interface {
 	Marshaler
 	Unmarshaler

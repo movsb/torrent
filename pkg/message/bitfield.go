@@ -5,7 +5,10 @@ import (
 	"sync"
 )
 
-// BitField ...
+// BitField is just a byte array (bitmap) that stores bits which pieces a peer have.
+// One bit per piece. If have, set to one. If not have, set to zero.
+// BitField is shared between peers: downloaders & uploaders, so we need a lock.
+// The bitsRemain is the bits that are not used for last byte.
 type BitField struct {
 	Fields []byte
 
@@ -33,6 +36,8 @@ func NewBitField(pieceCount int, value byte) *BitField {
 }
 
 // Marshal ...
+// We make this a pointer receiver to avoid
+// the copy of mutex.
 func (m *BitField) Marshal() ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

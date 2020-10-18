@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/movsb/torrent/file"
+	"github.com/movsb/torrent/pkg/torrent"
 )
 
 type _IndexedFile struct {
@@ -20,7 +20,7 @@ type PieceManager struct {
 	mu sync.RWMutex
 
 	// The parsed torrent file.
-	f *file.File
+	f *torrent.File
 
 	// File handles for each file in the torrent.
 	// Opens on demand.
@@ -31,11 +31,11 @@ type PieceManager struct {
 }
 
 // NewPieceManager ...
-func NewPieceManager(f *file.File) *PieceManager {
+func NewPieceManager(f *torrent.File) *PieceManager {
 	pm := &PieceManager{
 		f:           f,
 		fds:         make([]*os.File, len(f.Files)),
-		piece2files: make([][]_IndexedFile, f.PieceHashes.Len()),
+		piece2files: make([][]_IndexedFile, f.PieceHashes.Count()),
 	}
 
 	pm.calcFiles()
@@ -95,7 +95,7 @@ func (p *PieceManager) Close() error {
 
 // PieceCount ...
 func (p *PieceManager) PieceCount() int {
-	return p.f.PieceHashes.Len()
+	return p.f.PieceHashes.Count()
 }
 
 // ReadPiece ...

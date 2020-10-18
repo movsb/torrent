@@ -1,11 +1,10 @@
-package file
+package torrent
 
 import (
 	"bytes"
 	"crypto/sha1"
 	"fmt"
 	"math"
-	"os"
 
 	"github.com/movsb/torrent/pkg/common"
 	"github.com/zeebo/bencode"
@@ -62,7 +61,7 @@ func (f *_File) convert() (*File, error) {
 	if calcNumPieces != nPieces {
 		return nil, fmt.Errorf(`invalid hash from pieces: calcNumPieces mismatch`)
 	}
-	c.PieceHashes = PieceHashes(i.Pieces)
+	c.PieceHashes = common.PieceHashes(i.Pieces)
 
 	for _, item := range i.Files {
 		it := Item{
@@ -101,90 +100,4 @@ type _Item struct {
 	Length    int64    `bencode:"length"`
 	Paths     []string `bencode:"path"`
 	PathsUTF8 []string `bencode:"path.utf-8"`
-}
-
-// File ...
-type File struct {
-	Name     string
-	Announce string
-
-	Single bool
-	Files  []Item
-	Length int64
-
-	PieceLength int
-	PieceHashes PieceHashes
-
-	rawInfo  bencode.RawMessage
-	infoHash common.InfoHash
-}
-
-// InfoHash ...
-func (f *File) InfoHash() common.InfoHash {
-	return f.infoHash
-}
-
-// Item ...
-type Item struct {
-	Length int64
-	Paths  []string
-}
-
-// Hash ...
-type Hash [sha1.Size]byte
-
-func (h Hash) String() string {
-	return fmt.Sprintf("%x", [sha1.Size]byte(h))
-}
-
-// PieceHashes ...
-type PieceHashes []byte
-
-// Len ...
-func (p PieceHashes) Len() int {
-	return len(p) / sha1.Size
-}
-
-// Index ...
-func (p PieceHashes) Index(index int) []byte {
-	s := sha1.Size * index
-	return p[s : s+sha1.Size]
-}
-
-// MarshalYAML ...
-func (p PieceHashes) MarshalYAML() (interface{}, error) {
-	list := make([]string, p.Len())
-	for i := 0; i < p.Len(); i++ {
-		list[i] = fmt.Sprintf("%x", p.Index(i))
-	}
-	return list, nil
-}
-
-func ParseFile(path string) (*File, error) {
-	fp, err := os.Open(path)
-	if err != nil {
-		panic(err)
-	}
-	defer fp.Close()
-
-	f := _File{}
-	if err := bencode.NewDecoder(fp).Decode(&f); err != nil {
-		panic(err)
-	}
-
-	return f.convert()
-}
-
-func ParseFileToInterface(path string) (interface{}, error) {
-	fp, err := os.Open(path)
-	if err != nil {
-		panic(err)
-	}
-	defer fp.Close()
-
-	var f interface{}
-	if err := bencode.NewDecoder(fp).Decode(&f); err != nil {
-		panic(err)
-	}
-	return f, nil
 }

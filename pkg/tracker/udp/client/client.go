@@ -21,7 +21,7 @@ func makeTransactionID() uint32 {
 // Client ...
 type Client struct {
 	Address  string
-	InfoHash common.InfoHash
+	InfoHash common.Hash
 	MyPeerID common.PeerID
 	conn     *net.UDPConn
 }

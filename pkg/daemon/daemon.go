@@ -8,12 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/movsb/torrent/file"
-	"github.com/movsb/torrent/peer"
 	"github.com/movsb/torrent/pkg/common"
 	"github.com/movsb/torrent/pkg/daemon/store"
 	"github.com/movsb/torrent/pkg/message"
+	"github.com/movsb/torrent/pkg/peer"
 	"github.com/movsb/torrent/pkg/seeder"
+	"github.com/movsb/torrent/pkg/torrent"
 	trackercommon "github.com/movsb/torrent/pkg/tracker/common"
 	trackertcpclient "github.com/movsb/torrent/pkg/tracker/tcp/client"
 	trackerudpclient "github.com/movsb/torrent/pkg/tracker/udp/client"
@@ -25,8 +25,8 @@ type Daemon struct {
 
 // Task ...
 type Task struct {
-	File     *file.File
-	InfoHash common.InfoHash
+	File     *torrent.File
+	InfoHash common.Hash
 	BitField *message.BitField
 	PM       *store.PieceManager
 	clients  map[string]*peer.Peer
@@ -60,7 +60,7 @@ func (t *Task) AddClient(client *peer.Peer) {
 }
 
 func (t *Task) AnnounceAndDownload() {
-	nPieces := t.File.PieceHashes.Len()
+	nPieces := t.File.PieceHashes.Count()
 	chPieces := make(chan peer.SinglePieceData, nPieces)
 	for i := 0; i < nPieces-1; i++ {
 		chPieces <- peer.SinglePieceData{
@@ -182,7 +182,7 @@ func (t *Task) Run() {
 
 	go func() {
 		donePieces := 0
-		nPieces := t.File.PieceHashes.Len()
+		nPieces := t.File.PieceHashes.Count()
 		for donePieces < nPieces {
 			piece := <-t.done
 			err := t.PM.WritePiece(piece.Index, piece.Data)
@@ -203,7 +203,7 @@ func (t *Task) Run() {
 			}(piece.Index)
 
 			donePieces++
-			percent := float64(donePieces) / float64(t.File.PieceHashes.Len()) * 100
+			percent := float64(donePieces) / float64(t.File.PieceHashes.Count()) * 100
 			fmt.Printf("%0.2f piece downloaded: %d / %d | %d / %d\n",
 				percent, donePieces, nPieces,
 				donePieces*t.File.PieceLength, t.File.Length,
@@ -215,11 +215,11 @@ func (t *Task) Run() {
 // TaskManager ...
 type TaskManager struct {
 	mu    sync.RWMutex
-	tasks map[common.InfoHash]*Task
+	tasks map[common.Hash]*Task
 }
 
 // AddClient ...
-func (t *TaskManager) AddClient(ih common.InfoHash, client *peer.Peer) {
+func (t *TaskManager) AddClient(ih common.Hash, client *peer.Peer) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -227,7 +227,7 @@ func (t *TaskManager) AddClient(ih common.InfoHash, client *peer.Peer) {
 }
 
 // LoadTorrent ...
-func (t *TaskManager) LoadTorrent(ih common.InfoHash) (*seeder.LoadInfo, error) {
+func (t *TaskManager) LoadTorrent(ih common.Hash) (*seeder.LoadInfo, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -242,11 +242,11 @@ func (t *TaskManager) LoadTorrent(ih common.InfoHash) (*seeder.LoadInfo, error) 
 	return nil, fmt.Errorf("no such task")
 }
 
-func (t *TaskManager) CreateTask(torrent string, savePath string, bf byte) {
+func (t *TaskManager) CreateTask(file string, savePath string, bf byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	tf, err := file.ParseFile(torrent)
+	tf, err := torrent.ParseFile(file)
 	if err != nil {
 		panic(err)
 	}
@@ -259,7 +259,7 @@ func (t *TaskManager) CreateTask(torrent string, savePath string, bf byte) {
 	task := &Task{
 		File:     tf,
 		InfoHash: tf.InfoHash(),
-		BitField: message.NewBitField(tf.PieceHashes.Len(), bf),
+		BitField: message.NewBitField(tf.PieceHashes.Count(), bf),
 		PM:       store.NewPieceManager(tf),
 
 		clients: make(map[string]*peer.Peer),
@@ -272,7 +272,7 @@ func (t *TaskManager) CreateTask(torrent string, savePath string, bf byte) {
 
 func main() {
 	tm := &TaskManager{
-		tasks: make(map[common.InfoHash]*Task),
+		tasks: make(map[common.Hash]*Task),
 	}
 
 	seeder := seeder.Server{

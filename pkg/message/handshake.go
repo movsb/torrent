@@ -10,7 +10,7 @@ import (
 
 // Handshake ...
 type Handshake struct {
-	InfoHash common.InfoHash
+	InfoHash common.Hash
 	PeerID   common.PeerID
 }
 

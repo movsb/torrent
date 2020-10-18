@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/movsb/torrent/file"
+	"github.com/movsb/torrent/pkg/torrent"
 	trackercommon "github.com/movsb/torrent/pkg/tracker/common"
 	trackertcpclient "github.com/movsb/torrent/pkg/tracker/tcp/client"
 	trackerudpclient "github.com/movsb/torrent/pkg/tracker/udp/client"
@@ -42,8 +42,8 @@ func testTracker(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	torrent := args[1]
-	f, err := file.ParseFile(torrent)
+	path := args[1]
+	f, err := torrent.ParseFile(path)
 	if err != nil {
 		return err
 	}

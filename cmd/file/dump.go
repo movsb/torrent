@@ -5,13 +5,13 @@ import (
 	"log"
 	"os"
 
-	"github.com/movsb/torrent/file"
+	"github.com/movsb/torrent/pkg/torrent"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
 func dumpFile(cmd *cobra.Command, args []string) error {
-	fi, err := file.ParseFileToInterface(args[0])
+	fi, err := torrent.ParseFileToInterface(args[0])
 	if err != nil {
 		log.Println(err)
 		return err
@@ -31,7 +31,7 @@ func dumpFile(cmd *cobra.Command, args []string) error {
 
 func infoHashCmd(cmd *cobra.Command, args []string) error {
 	for _, path := range args {
-		tf, err := file.ParseFile(path)
+		tf, err := torrent.ParseFile(path)
 		if err != nil {
 			log.Println(err)
 			return err
