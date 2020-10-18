@@ -5,21 +5,22 @@ import (
 	"net"
 
 	"github.com/movsb/torrent/file"
-	"github.com/movsb/torrent/message"
 	"github.com/movsb/torrent/peer"
 	"github.com/movsb/torrent/pkg/common"
+	"github.com/movsb/torrent/pkg/daemon/store"
+	"github.com/movsb/torrent/pkg/message"
 	tracker "github.com/movsb/torrent/tracker/tcp"
 )
 
 type LoadInfo struct {
-	TF  *file.File
-	IFM *peer.IndexFileManager
-	BF  *message.BitField
+	TF *file.File
+	PM *store.PieceManager
+	BF *message.BitField
 }
 
 type LoadTorrent interface {
 	LoadTorrent(ih common.InfoHash) (*LoadInfo, error)
-	AddClient(ih common.InfoHash, client *peer.Client)
+	AddClient(ih common.InfoHash, client *peer.Peer)
 }
 
 // Server ...
@@ -81,9 +82,9 @@ func (s *Server) handle(conn net.Conn) {
 		return
 	}
 
-	c := peer.Client{
+	c := peer.Peer{
 		HerPeerID:   handshake.PeerID,
-		Ifm:         li.IFM,
+		PM:          li.PM,
 		MyBitField:  li.BF,
 		HerBitField: message.NewBitField(li.TF.PieceHashes.Len(), 0),
 		InfoHash:    li.TF.InfoHash(),

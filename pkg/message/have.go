@@ -10,8 +10,7 @@ type Have struct {
 	Index int
 }
 
-var _ Marshaler = &Have{}
-var _ Unmarshaler = &Have{}
+var _ Message = &Have{}
 
 // Marshal ...
 func (m *Have) Marshal() ([]byte, error) {

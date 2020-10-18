@@ -12,13 +12,22 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/movsb/torrent/message"
 	"github.com/movsb/torrent/pkg/common"
+	"github.com/movsb/torrent/pkg/daemon/store"
+	"github.com/movsb/torrent/pkg/message"
 	tracker "github.com/movsb/torrent/tracker/tcp"
 )
 
-// Client ...
-type Client struct {
+// SinglePieceData ...
+type SinglePieceData struct {
+	Index  int
+	Hash   []byte
+	Length int
+	Data   []byte
+}
+
+// Peer ...
+type Peer struct {
 	InfoHash  common.InfoHash
 	HerPeerID tracker.PeerID
 	PeerAddr  string
@@ -29,7 +38,7 @@ type Client struct {
 	MyBitField  *message.BitField
 	HerBitField *message.BitField
 
-	Ifm *IndexFileManager
+	PM *store.PieceManager
 
 	msgch    chan message.Message
 	HaveCh   chan int
@@ -42,7 +51,7 @@ type Client struct {
 }
 
 // tmp
-func (c *Client) SetConn(conn net.Conn) {
+func (c *Peer) SetConn(conn net.Conn) {
 	c.conn = conn
 	c.rw = bufio.NewReadWriter(
 		bufio.NewReader(conn),
@@ -55,7 +64,7 @@ func (c *Client) SetConn(conn net.Conn) {
 }
 
 // Close ...
-func (c *Client) Close() error {
+func (c *Peer) Close() error {
 	if c.conn != nil {
 		c.rw.Flush()
 		c.conn.Close()
@@ -65,7 +74,7 @@ func (c *Client) Close() error {
 }
 
 // Send ...
-func (c *Client) Send(msgID message.MsgID, req message.Marshaler) error {
+func (c *Peer) Send(msgID message.MsgID, req message.Marshaler) error {
 	b, err := req.Marshal()
 	if err != nil {
 		return fmt.Errorf("client: send: %v", err)
@@ -88,7 +97,7 @@ func (c *Client) Send(msgID message.MsgID, req message.Marshaler) error {
 }
 
 // Recv ...
-func (c *Client) Recv() (message.MsgID, message.Message, error) {
+func (c *Peer) Recv() (message.MsgID, message.Message, error) {
 	sizeBuf := []byte{0, 0, 0, 0}
 	if _, err := io.ReadFull(c.rw, sizeBuf); err != nil {
 		return 0, nil, fmt.Errorf("client: recv size: %v", err)
@@ -144,7 +153,7 @@ func (c *Client) Recv() (message.MsgID, message.Message, error) {
 }
 
 // RecvBitField ...
-func (c *Client) RecvBitField() error {
+func (c *Peer) RecvBitField() error {
 keepalive:
 	id, msg, err := c.Recv()
 	if err != nil {
@@ -159,12 +168,12 @@ keepalive:
 		return fmt.Errorf("recv non-bitfield message")
 	}
 	c.HerBitField = msg.(*message.BitField)
-	c.HerBitField.Init(c.Ifm.PieceCount())
+	c.HerBitField.Init(c.PM.PieceCount())
 	return nil
 }
 
 // Download ...
-func (c *Client) Download(pending chan SinglePieceData, done chan SinglePieceData) error {
+func (c *Peer) Download(pending chan SinglePieceData, done chan SinglePieceData) error {
 	go func() {
 		for {
 			id, msg, err := c.Recv()
@@ -236,7 +245,7 @@ func (c *Client) Download(pending chan SinglePieceData, done chan SinglePieceDat
 	return nil
 }
 
-func (c *Client) downloadPiece(piece *SinglePieceData) error {
+func (c *Peer) downloadPiece(piece *SinglePieceData) error {
 	c.requested = 0
 	c.downloaded = 0
 	c.backlog = 0
@@ -280,7 +289,7 @@ func (c *Client) downloadPiece(piece *SinglePieceData) error {
 	return nil
 }
 
-func (c *Client) readMessage(msg message.Message) error {
+func (c *Peer) readMessage(msg message.Message) error {
 	piece := c.curPiece
 	switch typed := msg.(type) {
 	default:
@@ -295,14 +304,14 @@ func (c *Client) readMessage(msg message.Message) error {
 		fmt.Printf("peer interested\n")
 	case *message.Have:
 		c.HerBitField.SetPiece(typed.Index)
-		fmt.Printf("peer has piece %d\n", typed.Index)
+		// fmt.Printf("peer has piece %d\n", typed.Index)
 	case *message.Request:
 		request := msg.(*message.Request)
 		if !c.MyBitField.HasPiece(request.Index) {
 			fmt.Printf("peer requests piece I don't have: %d", request.Index)
 			break
 		}
-		piece, err := c.Ifm.ReadPiece(request.Index)
+		piece, err := c.PM.ReadPiece(request.Index)
 		if err != nil {
 			fmt.Printf("read piece failed: %d, %v", request.Index, err)
 			break
@@ -319,7 +328,7 @@ func (c *Client) readMessage(msg message.Message) error {
 			fmt.Printf("error sent piece: %v", err)
 			break
 		}
-		fmt.Printf("upload piece: %d\n", request.Index)
+		// fmt.Printf("upload piece: %d\n", request.Index)
 	case *message.Piece:
 		pieceRecv := msg.(*message.Piece)
 		if pieceRecv.Index != piece.Index {
@@ -339,7 +348,7 @@ func (c *Client) readMessage(msg message.Message) error {
 	return nil
 }
 
-func (c *Client) checkIntegrity(piece *SinglePieceData) error {
+func (c *Peer) checkIntegrity(piece *SinglePieceData) error {
 	got := sha1.Sum(piece.Data)
 	if !bytes.Equal(piece.Hash, got[:]) {
 		return fmt.Errorf("check integrity failed")

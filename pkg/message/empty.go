@@ -5,8 +5,7 @@ import "fmt"
 // _Empty ...
 type _Empty struct{}
 
-var _ Marshaler = &_Empty{}
-var _ Unmarshaler = &_Empty{}
+var _ Message = &_Empty{}
 
 // Marshal ...
 func (m _Empty) Marshal() ([]byte, error) {

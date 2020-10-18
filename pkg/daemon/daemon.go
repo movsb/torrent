@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/movsb/torrent/file"
-	"github.com/movsb/torrent/message"
 	"github.com/movsb/torrent/peer"
 	"github.com/movsb/torrent/pkg/common"
+	"github.com/movsb/torrent/pkg/daemon/store"
+	"github.com/movsb/torrent/pkg/message"
 	"github.com/movsb/torrent/pkg/seeder"
 	tracker "github.com/movsb/torrent/tracker/tcp"
 	udptracker "github.com/movsb/torrent/tracker/udp"
@@ -26,8 +27,8 @@ type Task struct {
 	File     *file.File
 	InfoHash common.InfoHash
 	BitField *message.BitField
-	IFM      *peer.IndexFileManager
-	clients  map[string]*peer.Client
+	PM       *store.PieceManager
+	clients  map[string]*peer.Peer
 
 	pending chan peer.SinglePieceData
 	done    chan peer.SinglePieceData
@@ -36,7 +37,7 @@ type Task struct {
 }
 
 // AddClient ...
-func (t *Task) AddClient(client *peer.Client) {
+func (t *Task) AddClient(client *peer.Peer) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -143,9 +144,9 @@ func (t *Task) AnnounceAndDownload() {
 				return
 			}
 
-			c := peer.Client{
+			c := peer.Peer{
 				HerPeerID:  handshake.PeerID,
-				Ifm:        t.IFM,
+				PM:         t.PM,
 				MyBitField: t.BitField,
 				InfoHash:   t.File.InfoHash(),
 				PeerAddr:   p,
@@ -183,7 +184,7 @@ func (t *Task) Run() {
 		nPieces := t.File.PieceHashes.Len()
 		for donePieces < nPieces {
 			piece := <-t.done
-			err := t.IFM.WritePiece(piece.Index, piece.Data)
+			err := t.PM.WritePiece(piece.Index, piece.Data)
 			if err != nil {
 				panic(fmt.Errorf("WritePiece failed: %s", err))
 			}
@@ -217,7 +218,7 @@ type TaskManager struct {
 }
 
 // AddClient ...
-func (t *TaskManager) AddClient(ih common.InfoHash, client *peer.Client) {
+func (t *TaskManager) AddClient(ih common.InfoHash, client *peer.Peer) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -231,9 +232,9 @@ func (t *TaskManager) LoadTorrent(ih common.InfoHash) (*seeder.LoadInfo, error) 
 
 	if task, ok := t.tasks[ih]; ok {
 		return &seeder.LoadInfo{
-			TF:  task.File,
-			IFM: task.IFM,
-			BF:  task.BitField,
+			TF: task.File,
+			PM: task.PM,
+			BF: task.BitField,
 		}, nil
 	}
 
@@ -258,9 +259,9 @@ func (t *TaskManager) CreateTask(torrent string, savePath string, bf byte) {
 		File:     tf,
 		InfoHash: tf.InfoHash(),
 		BitField: message.NewBitField(tf.PieceHashes.Len(), bf),
-		IFM:      peer.NewIndexFileManager(tf.Name, tf.Single, tf.Files, tf.PieceLength, tf.PieceHashes),
+		PM:       store.NewPieceManager(tf),
 
-		clients: make(map[string]*peer.Client),
+		clients: make(map[string]*peer.Peer),
 	}
 
 	t.tasks[tf.InfoHash()] = task
@@ -280,7 +281,7 @@ func main() {
 	}
 
 	tm.CreateTask("8ce301d28fe97eed1a6ef7feaf296411b375222f.torrent", ".", 0xFF)
-	tm.CreateTask("ubuntu.torrent", ".", 0x00)
+	//tm.CreateTask("ubuntu.torrent", ".", 0x00)
 
 	if err := seeder.Run(); err != nil {
 		panic(err)

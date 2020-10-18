@@ -8,6 +8,7 @@ import (
 // MaxRequestLength ...
 // All current implementations use 2^14 (16 kiB), and close connections
 // which request an amount greater than that.
+// In practice, they just keep to choke.
 const MaxRequestLength = 16 << 10
 
 // Request ...
@@ -17,8 +18,7 @@ type Request struct {
 	Length int
 }
 
-var _ Marshaler = &Request{}
-var _ Unmarshaler = &Request{}
+var _ Message = &Request{}
 
 // Marshal ...
 func (m *Request) Marshal() ([]byte, error) {

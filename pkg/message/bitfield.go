@@ -15,8 +15,7 @@ type BitField struct {
 	mu sync.RWMutex
 }
 
-var _ Marshaler = &BitField{}
-var _ Unmarshaler = &BitField{}
+var _ Message = &BitField{}
 
 // NewBitField ...
 func NewBitField(pieceCount int, value byte) *BitField {
@@ -97,6 +96,7 @@ func (m *BitField) calc(index int, fn func(byteIndex int, bitMask byte)) {
 	fn(byteIndex, bitMask)
 }
 
+// AllOnes ...
 func (m *BitField) AllOnes() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

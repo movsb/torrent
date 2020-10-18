@@ -6,8 +6,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/movsb/torrent/message"
 	"github.com/movsb/torrent/pkg/common"
+	"github.com/movsb/torrent/pkg/message"
 	"github.com/movsb/torrent/pkg/utils"
 	tracker "github.com/movsb/torrent/tracker/tcp"
 )

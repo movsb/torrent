@@ -12,8 +12,7 @@ type Piece struct {
 	Data  []byte
 }
 
-var _ Marshaler = &Request{}
-var _ Unmarshaler = &Request{}
+var _ Message = &Request{}
 
 // Marshal ...
 func (m *Piece) Marshal() ([]byte, error) {

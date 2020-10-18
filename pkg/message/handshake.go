@@ -15,8 +15,9 @@ type Handshake struct {
 	PeerID   tracker.PeerID
 }
 
-var _ Marshaler = &Handshake{}
-var _ Unmarshaler = &Handshake{}
+// Handshake indeed is not a BitTorrent message.
+// We just put it here for convenience.
+var _ Message = &Handshake{}
 
 var (
 	handshakeStart    = byte(19)
