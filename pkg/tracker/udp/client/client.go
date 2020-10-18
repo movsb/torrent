@@ -1,4 +1,4 @@
-package tracker
+package trackerudpclient
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"time"
 
-	tcptracker "github.com/movsb/torrent/tracker/tcp"
+	"github.com/movsb/torrent/pkg/common"
 )
 
 func init() {
@@ -18,16 +18,16 @@ func makeTransactionID() uint32 {
 	return rand.Uint32()
 }
 
-// UDPTracker ...
-type UDPTracker struct {
+// Client ...
+type Client struct {
 	Address  string
-	InfoHash [20]byte
-	MyPeerID tcptracker.PeerID
+	InfoHash common.InfoHash
+	MyPeerID common.PeerID
 	conn     *net.UDPConn
 }
 
 // Announce ...
-func (t *UDPTracker) Announce() (*AnnounceResponse, error) {
+func (t *Client) Announce() (*AnnounceResponse, error) {
 	if err := t.dial(); err != nil {
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func (t *UDPTracker) Announce() (*AnnounceResponse, error) {
 	return announceResp, nil
 }
 
-func (t *UDPTracker) dial() error {
+func (t *Client) dial() error {
 	u, err := url.Parse(t.Address)
 	if err != nil {
 		return err
@@ -66,7 +66,7 @@ func (t *UDPTracker) dial() error {
 }
 
 // Connect ...
-func (t *UDPTracker) connect() (*ConnectResponse, error) {
+func (t *Client) connect() (*ConnectResponse, error) {
 	defer t.conn.SetDeadline(time.Time{})
 
 	req := ConnectRequest{
@@ -104,7 +104,7 @@ func (t *UDPTracker) connect() (*ConnectResponse, error) {
 	return &resp, nil
 }
 
-func (t *UDPTracker) announce(connectionID uint64) (*AnnounceResponse, error) {
+func (t *Client) announce(connectionID uint64) (*AnnounceResponse, error) {
 	defer t.conn.SetDeadline(time.Time{})
 
 	req := AnnounceRequest{

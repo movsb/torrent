@@ -1,24 +1,24 @@
-package tracker
+package trackerudpclient
 
 import (
 	"os"
 	"testing"
 
 	"github.com/movsb/torrent/file"
-	tcptracker "github.com/movsb/torrent/tracker/tcp"
+	trackercommon "github.com/movsb/torrent/pkg/tracker/common"
 	"gopkg.in/yaml.v3"
 )
 
-func TestUDPTracker(t *testing.T) {
+func TestClient(t *testing.T) {
 	f, err := file.ParseFile("../../ubuntu.torrent")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ut := &UDPTracker{
+	ut := &Client{
 		Address:  `udp://tracker.leechers-paradise.org:6969`,
 		InfoHash: f.InfoHash(),
-		MyPeerID: tcptracker.MyPeerID,
+		MyPeerID: trackercommon.MyPeerID,
 	}
 
 	resp, err := ut.Announce()

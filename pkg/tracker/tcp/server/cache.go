@@ -1,10 +1,10 @@
-package tcptrackerserver
+package trackertcpserver
 
 import (
 	"fmt"
 	"sync"
 
-	tracker "github.com/movsb/torrent/tracker/tcp"
+	"github.com/movsb/torrent/pkg/common"
 )
 
 type _PeerCache struct {
@@ -18,7 +18,7 @@ func _NewPeerCache() *_PeerCache {
 	}
 }
 
-func (c *_PeerCache) Add(ih [20]byte, peerID tracker.PeerID, ip string, port int) []_PeerCacheEntry {
+func (c *_PeerCache) Add(ih [20]byte, peerID common.PeerID, ip string, port int) []_PeerCacheEntry {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.m[ih] == nil {
@@ -46,7 +46,7 @@ func (c *_PeerCache) get(ih [20]byte) (peers []_PeerCacheEntry) {
 }
 
 type _PeerCacheEntry struct {
-	PeerID tracker.PeerID
+	PeerID common.PeerID
 	IP     string
 	Port   int
 }

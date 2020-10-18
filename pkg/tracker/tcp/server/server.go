@@ -1,4 +1,4 @@
-package tcptrackerserver
+package trackertcpserver
 
 import (
 	"context"
@@ -11,27 +11,26 @@ import (
 	"strings"
 	"time"
 
-	trackercommon "github.com/movsb/torrent/pkg/tracker/common"
-	tracker "github.com/movsb/torrent/tracker/tcp"
+	trackertcpcommon "github.com/movsb/torrent/pkg/tracker/tcp/common"
 	"github.com/zeebo/bencode"
 )
 
-// TCPTrackerServer ...
-type TCPTrackerServer struct {
+// Server ...
+type Server struct {
 	endpoint string
 	cache    *_PeerCache
 }
 
-// NewTCPTrackerServer ...
-func NewTCPTrackerServer(endpoint string) *TCPTrackerServer {
-	return &TCPTrackerServer{
+// NewServer ...
+func NewServer(endpoint string) *Server {
+	return &Server{
 		endpoint: endpoint,
 		cache:    _NewPeerCache(),
 	}
 }
 
 // Run ...
-func (s *TCPTrackerServer) Run(ctx context.Context) error {
+func (s *Server) Run(ctx context.Context) error {
 	endpoint := s.endpoint
 	if !strings.Contains(endpoint, "://") {
 		endpoint = "http://" + endpoint
@@ -74,11 +73,11 @@ func (s *TCPTrackerServer) Run(ctx context.Context) error {
 	}
 }
 
-func (s *TCPTrackerServer) handleAnnounce(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAnnounce(w http.ResponseWriter, r *http.Request) {
 	announceError := func(w http.ResponseWriter, err error) {
 		w.WriteHeader(400)
 		bencode.NewEncoder(w).Encode(
-			&trackercommon.AnnounceResponse{
+			&trackertcpcommon.AnnounceResponse{
 				FailureReason: err.Error(),
 			},
 		)
@@ -136,9 +135,9 @@ func (s *TCPTrackerServer) handleAnnounce(w http.ResponseWriter, r *http.Request
 	}
 
 	peersCache := s.cache.Add(infoHash, peerID, ip, port)
-	peers := []tracker.Peer{}
+	peers := []trackertcpcommon.Peer{}
 	for _, c := range peersCache {
-		peers = append(peers, tracker.Peer{
+		peers = append(peers, trackertcpcommon.Peer{
 			ID:   c.PeerID,
 			IP:   c.IP,
 			Port: c.Port,
@@ -146,7 +145,7 @@ func (s *TCPTrackerServer) handleAnnounce(w http.ResponseWriter, r *http.Request
 	}
 
 	bencode.NewEncoder(w).Encode(
-		&trackercommon.AnnounceResponse{
+		&trackertcpcommon.AnnounceResponse{
 			Interval: 60,
 			Peers:    peers,
 		},

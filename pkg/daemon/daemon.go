@@ -14,8 +14,9 @@ import (
 	"github.com/movsb/torrent/pkg/daemon/store"
 	"github.com/movsb/torrent/pkg/message"
 	"github.com/movsb/torrent/pkg/seeder"
-	tracker "github.com/movsb/torrent/tracker/tcp"
-	udptracker "github.com/movsb/torrent/tracker/udp"
+	trackercommon "github.com/movsb/torrent/pkg/tracker/common"
+	trackertcpclient "github.com/movsb/torrent/pkg/tracker/tcp/client"
+	trackerudpclient "github.com/movsb/torrent/pkg/tracker/udp/client"
 )
 
 // Daemon ...
@@ -98,7 +99,7 @@ func (t *Task) AnnounceAndDownload() {
 
 	switch u.Scheme {
 	case "http", "https":
-		t := tracker.TCPTracker{
+		t := trackertcpclient.Client{
 			Address:  trackerURL,
 			InfoHash: t.File.InfoHash(),
 		}
@@ -110,10 +111,10 @@ func (t *Task) AnnounceAndDownload() {
 			peers = append(peers, fmt.Sprintf("%s:%d", p.IP, p.Port))
 		}
 	case "udp":
-		t := udptracker.UDPTracker{
+		t := trackerudpclient.Client{
 			Address:  trackerURL,
 			InfoHash: t.File.InfoHash(),
-			MyPeerID: tracker.MyPeerID,
+			MyPeerID: trackercommon.MyPeerID,
 		}
 		r, err := t.Announce()
 		if err != nil {
@@ -138,7 +139,7 @@ func (t *Task) AnnounceAndDownload() {
 				}
 			}()
 
-			handshake, err := peer.HandshakeOutgoing(conn, 10, t.File.InfoHash(), tracker.MyPeerID)
+			handshake, err := peer.HandshakeOutgoing(conn, 10, t.File.InfoHash(), trackercommon.MyPeerID)
 			if err != nil {
 				fmt.Printf("handshake failed: %v", err)
 				return
@@ -276,7 +277,7 @@ func main() {
 
 	seeder := seeder.Server{
 		Address:     `localhost:8888`,
-		MyPeerID:    tracker.MyPeerID,
+		MyPeerID:    trackercommon.MyPeerID,
 		LoadTorrent: tm,
 	}
 

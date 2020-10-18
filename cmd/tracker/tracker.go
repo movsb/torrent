@@ -6,8 +6,9 @@ import (
 	"os"
 
 	"github.com/movsb/torrent/file"
-	tcptracker "github.com/movsb/torrent/tracker/tcp"
-	udptracker "github.com/movsb/torrent/tracker/udp"
+	trackercommon "github.com/movsb/torrent/pkg/tracker/common"
+	trackertcpclient "github.com/movsb/torrent/pkg/tracker/tcp/client"
+	trackerudpclient "github.com/movsb/torrent/pkg/tracker/udp/client"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -48,10 +49,10 @@ func testTracker(cmd *cobra.Command, args []string) error {
 	}
 
 	if u.Scheme == "http" || u.Scheme == "https" {
-		t := tcptracker.TCPTracker{
+		t := trackertcpclient.Client{
 			Address:  tracker,
 			InfoHash: f.InfoHash(),
-			MyPeerID: tcptracker.MyPeerID,
+			MyPeerID: trackercommon.MyPeerID,
 		}
 		r, err := t.Announce()
 		if err != nil {
@@ -59,10 +60,10 @@ func testTracker(cmd *cobra.Command, args []string) error {
 		}
 		yaml.NewEncoder(os.Stdout).Encode(r)
 	} else if u.Scheme == "udp" {
-		t := udptracker.UDPTracker{
+		t := trackerudpclient.Client{
 			Address:  tracker,
 			InfoHash: f.InfoHash(),
-			MyPeerID: tcptracker.MyPeerID,
+			MyPeerID: trackercommon.MyPeerID,
 		}
 		r, err := t.Announce()
 		if err != nil {

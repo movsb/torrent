@@ -1,4 +1,4 @@
-# UDP
+# CLIENT
 
 This package implements the UDP Tracker Protocol for BitTorrent.
 

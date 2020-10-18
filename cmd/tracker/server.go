@@ -6,12 +6,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	tcptrackerserver "github.com/movsb/torrent/pkg/tracker/server/tcp"
+	trackertcpserver "github.com/movsb/torrent/pkg/tracker/tcp/server"
 	"github.com/spf13/cobra"
 )
 
 func runServer(cmd *cobra.Command, args []string) error {
-	s := tcptrackerserver.NewTCPTrackerServer(args[0])
+	s := trackertcpserver.NewServer(args[0])
 
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := s.Run(ctx); err != nil {

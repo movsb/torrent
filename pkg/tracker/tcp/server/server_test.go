@@ -1,12 +1,12 @@
-package tcptrackerserver
+package trackertcpserver
 
 import (
 	"context"
 	"testing"
 )
 
-func TestTCPTrackerServer(t *testing.T) {
-	s := TCPTrackerServer{
+func TestServer(t *testing.T) {
+	s := Server{
 		endpoint: `localhost:9999/announce`,
 	}
 

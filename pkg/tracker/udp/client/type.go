@@ -1,11 +1,11 @@
-package tracker
+package trackerudpclient
 
 import (
 	"encoding/binary"
 	"fmt"
 	"net"
 
-	tcptracker "github.com/movsb/torrent/tracker/tcp"
+	"github.com/movsb/torrent/pkg/common"
 )
 
 // Action ...
@@ -73,8 +73,8 @@ type AnnounceRequest struct {
 	ConnectionID  uint64
 	Action        Action
 	TransactionID uint32
-	InfoHash      [20]byte
-	PeerID        tcptracker.PeerID
+	InfoHash      common.InfoHash
+	PeerID        common.PeerID
 	Downloaded    uint64
 	Left          uint64
 	Uploaded      uint64

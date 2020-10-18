@@ -15,7 +15,6 @@ import (
 	"github.com/movsb/torrent/pkg/common"
 	"github.com/movsb/torrent/pkg/daemon/store"
 	"github.com/movsb/torrent/pkg/message"
-	tracker "github.com/movsb/torrent/tracker/tcp"
 )
 
 // SinglePieceData ...
@@ -29,7 +28,7 @@ type SinglePieceData struct {
 // Peer ...
 type Peer struct {
 	InfoHash  common.InfoHash
-	HerPeerID tracker.PeerID
+	HerPeerID common.PeerID
 	PeerAddr  string
 	conn      net.Conn
 

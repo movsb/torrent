@@ -6,13 +6,12 @@ import (
 	"fmt"
 
 	"github.com/movsb/torrent/pkg/common"
-	tracker "github.com/movsb/torrent/tracker/tcp"
 )
 
 // Handshake ...
 type Handshake struct {
 	InfoHash common.InfoHash
-	PeerID   tracker.PeerID
+	PeerID   common.PeerID
 }
 
 // Handshake indeed is not a BitTorrent message.
@@ -25,9 +24,9 @@ var (
 	handshakeReserved = [8]byte{0, 0, 0, 0, 0, 0, 0, 0}
 
 	// HandshakeLength ...
-	HandshakeLength        = 1 + len(handshakeString) + len(handshakeReserved) + sha1.Size + tracker.PeerIDLength
-	handshakeInfoHashStart = HandshakeLength - sha1.Size - tracker.PeerIDLength
-	handshakePeerIDStart   = HandshakeLength - tracker.PeerIDLength
+	HandshakeLength        = 1 + len(handshakeString) + len(handshakeReserved) + sha1.Size + common.PeerIDLength
+	handshakeInfoHashStart = HandshakeLength - sha1.Size - common.PeerIDLength
+	handshakePeerIDStart   = HandshakeLength - common.PeerIDLength
 )
 
 // Marshal ...
@@ -63,7 +62,7 @@ func (m *Handshake) Unmarshal(r []byte) error {
 	copy(m.InfoHash[:], r[start:start+sha1.Size])
 
 	start = handshakePeerIDStart
-	copy(m.PeerID[:], r[start:start+tracker.PeerIDLength])
+	copy(m.PeerID[:], r[start:start+common.PeerIDLength])
 
 	return nil
 }

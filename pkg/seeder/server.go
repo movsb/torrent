@@ -9,7 +9,7 @@ import (
 	"github.com/movsb/torrent/pkg/common"
 	"github.com/movsb/torrent/pkg/daemon/store"
 	"github.com/movsb/torrent/pkg/message"
-	tracker "github.com/movsb/torrent/tracker/tcp"
+	trackercommon "github.com/movsb/torrent/pkg/tracker/common"
 )
 
 type LoadInfo struct {
@@ -26,7 +26,7 @@ type LoadTorrent interface {
 // Server ...
 type Server struct {
 	Address  string
-	MyPeerID tracker.PeerID
+	MyPeerID common.PeerID
 
 	LoadTorrent LoadTorrent
 }
@@ -63,7 +63,7 @@ func (s *Server) handle(conn net.Conn) {
 	)
 
 	handshake, err := peer.HandshakeIncoming(
-		conn, 10, tracker.MyPeerID,
+		conn, 10, trackercommon.MyPeerID,
 		func(m *message.Handshake) error {
 			if s.MyPeerID.Equal(m.PeerID) {
 				fmt.Printf("self connect")
