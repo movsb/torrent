@@ -1,4 +1,4 @@
-package file
+package torrent
 
 import (
 	"log"
@@ -58,6 +58,13 @@ func AddCommands(root *cobra.Command) {
 	}
 	fileCmd.AddCommand(infoHashCmd)
 
+	createCmd := &cobra.Command{
+		Use:   `create <file/dir>`,
+		Short: `Creates a new torrent from file/dir`,
+		Args:  cobra.ExactArgs(1),
+		Run:   createTorrent,
+	}
+	fileCmd.AddCommand(createCmd)
 }
 
 func fileInfo(cmd *cobra.Command, args []string) error {

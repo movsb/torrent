@@ -88,16 +88,16 @@ func (f *_File) infoHash() [20]byte {
 // _Info ...
 type _Info struct {
 	Name        string  `bencode:"name"`
-	NameUTF8    string  `bencode:"name.utf-8"`
-	Files       []_Item `bencode:"files"`
+	NameUTF8    string  `bencode:"name.utf-8,omitempty"`
 	Length      int64   `bencode:"length,omitempty"`
-	PieceLength int     `bencode:"piece length"`
 	Pieces      []byte  `bencode:"pieces"`
+	PieceLength int     `bencode:"piece length"`
+	Files       []_Item `bencode:"files,omitempty"`
 }
 
 // _Item ...
 type _Item struct {
-	Length    int64    `bencode:"length"`
 	Paths     []string `bencode:"path"`
-	PathsUTF8 []string `bencode:"path.utf-8"`
+	PathsUTF8 []string `bencode:"path.utf-8,omitempty"`
+	Length    int64    `bencode:"length"`
 }

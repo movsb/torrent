@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 
 	"github.com/movsb/torrent/cmd/download"
-	cmdfile "github.com/movsb/torrent/cmd/file"
 	cmdSeeder "github.com/movsb/torrent/cmd/seeder"
 	"github.com/movsb/torrent/cmd/tools"
+	"github.com/movsb/torrent/cmd/torrent"
 	"github.com/movsb/torrent/cmd/tracker"
 	"github.com/spf13/cobra"
 )
@@ -19,7 +19,7 @@ func main() {
 		Short: `A BitTorrent client.`,
 	}
 
-	cmdfile.AddCommands(rootCmd)
+	torrent.AddCommands(rootCmd)
 	download.AddCommands(rootCmd)
 	tracker.AddCommands(rootCmd)
 	cmdSeeder.AddCommands(rootCmd)
