@@ -110,19 +110,14 @@ func (c *Creator) createDir() (string, int64, []_Item, error) {
 }
 
 func (c *Creator) calcPieceHashes(prefix string, size int64, files []_Item) error {
-	readers := make([]io.Reader, 0, len(files))
+	paths := make([]string, 0, len(files))
 	for _, file := range files {
 		path := filepath.Join(prefix, filepath.Join(file.Paths...))
-		fp, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer fp.Close()
-		readers = append(readers, fp)
+		paths = append(paths, path)
 	}
 
 	piece := make([]byte, c.f.Info.PieceLength)
-	mr := io.MultiReader(readers...)
+	mr := NewMultiReader(paths)
 
 	pieceCount := len(c.f.Info.Pieces) / 20
 	pieceLength := c.f.Info.PieceLength
@@ -213,4 +208,47 @@ func fileList(dir string) (string, int64, []_Item, error) {
 	}
 
 	return dir, size, files, nil
+}
+
+// MultiReader is a modified version of io.MultiReader that
+// supports opening files when needed.
+// Not thread-safe.
+type MultiReader struct {
+	files []string
+	fps   []*os.File
+}
+
+// NewMultiReader ...
+func NewMultiReader(files []string) *MultiReader {
+	r := &MultiReader{
+		files: files,
+		fps:   make([]*os.File, len(files)),
+	}
+	return r
+}
+
+func (mr *MultiReader) Read(p []byte) (n int, err error) {
+	for len(mr.fps) > 0 {
+		if mr.fps[0] == nil {
+			fp, err := os.Open(mr.files[0])
+			if err != nil {
+				return 0, err
+			}
+			mr.fps[0] = fp
+		}
+		n, err = mr.fps[0].Read(p)
+		if err == io.EOF {
+			mr.fps[0].Close()
+			mr.fps = mr.fps[1:]
+			mr.files = mr.files[1:]
+		}
+		if n > 0 || err != io.EOF {
+			if err == io.EOF && len(mr.fps) > 0 {
+				// Don't return EOF yet. More readers remain.
+				err = nil
+			}
+			return
+		}
+	}
+	return 0, io.EOF
 }
