@@ -67,6 +67,7 @@ func (s *Server) Run(ctx context.Context) error {
 		close(c)
 		go func() {
 			<-ctx.Done()
+			// TODO(movsb): wait this done
 			hs.Shutdown(context.Background())
 		}()
 		return nil

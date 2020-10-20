@@ -8,6 +8,7 @@ import (
 	"github.com/movsb/torrent/cmd/download"
 	cmdfile "github.com/movsb/torrent/cmd/file"
 	cmdSeeder "github.com/movsb/torrent/cmd/seeder"
+	"github.com/movsb/torrent/cmd/tools"
 	"github.com/movsb/torrent/cmd/tracker"
 	"github.com/spf13/cobra"
 )
@@ -22,6 +23,7 @@ func main() {
 	download.AddCommands(rootCmd)
 	tracker.AddCommands(rootCmd)
 	cmdSeeder.AddCommands(rootCmd)
+	tools.AddCommands(rootCmd)
 
 	if os.Getenv("DEBUG") != "" {
 		//rootCmd.SetArgs([]string{"download", "--tracker=localhost:9999/announce", "8ce301d28fe97eed1a6ef7feaf296411b375222f.torrent"})
