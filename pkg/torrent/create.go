@@ -243,6 +243,9 @@ func (mr *MultiReader) Read(p []byte) (n int, err error) {
 			mr.files = mr.files[1:]
 		}
 		if n > 0 || err != io.EOF {
+			if err != nil && err != io.EOF {
+				mr.fps[0].Close()
+			}
 			if err == io.EOF && len(mr.fps) > 0 {
 				// Don't return EOF yet. More readers remain.
 				err = nil
