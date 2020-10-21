@@ -1,7 +1,9 @@
 package trackertcpclient
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 
@@ -19,12 +21,13 @@ type Client struct {
 }
 
 // Announce ...
-func (t *Client) Announce() (*trackertcpcommon.AnnounceResponse, error) {
+func (t *Client) Announce(ctx context.Context) (*trackertcpcommon.AnnounceResponse, error) {
 	u, err := url.Parse(t.Address)
 	if err != nil {
+		log.Printf("Announce: failed to parse address: %v", err)
 		return nil, err
 	}
-	a := url.Values{}
+	a := u.Query()
 	a.Set(`info_hash`, string(t.InfoHash[:]))
 	a.Set(`peer_id`, string(trackercommon.MyPeerID[:]))
 	a.Set(`port`, `8888`)
@@ -33,12 +36,23 @@ func (t *Client) Announce() (*trackertcpcommon.AnnounceResponse, error) {
 	a.Set(`left`, `0`)
 	u.RawQuery = a.Encode()
 
-	fmt.Println(u.String())
-	resp, err := http.Get(u.String())
+	log.Printf("Announce: %s\n", u.String())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("Announce: error: %v\n", err)
+		return nil, err
+	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		log.Printf("Announce: non-200 status code: %v\n", resp.StatusCode)
+		return nil, fmt.Errorf(`trackers returns non-200 status code`)
+	}
 
 	var d trackertcpcommon.AnnounceResponse
 	if err := bencode.NewDecoder(resp.Body).Decode(&d); err != nil {

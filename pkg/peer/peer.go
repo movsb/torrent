@@ -3,6 +3,7 @@ package peer
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/movsb/torrent/pkg/common"
 	"github.com/movsb/torrent/pkg/daemon/store"
 	"github.com/movsb/torrent/pkg/message"
+	"github.com/movsb/torrent/pkg/utils"
 )
 
 // SinglePieceData ...
@@ -27,6 +29,7 @@ type SinglePieceData struct {
 
 // Peer ...
 type Peer struct {
+	Ctx       context.Context
 	InfoHash  common.Hash
 	HerPeerID common.PeerID
 	PeerAddr  string
@@ -80,6 +83,7 @@ func (c *Peer) Send(msgID message.MsgID, req message.Marshaler) error {
 	}
 	sizeBuf := []byte{0, 0, 0, 0}
 	binary.BigEndian.PutUint32(sizeBuf, 1+uint32(len(b)))
+	utils.SetDeadlineSeconds(c.conn, 10)
 	if _, err := c.rw.Write(sizeBuf); err != nil {
 		return fmt.Errorf("client: send: %v", err)
 	}
@@ -98,6 +102,7 @@ func (c *Peer) Send(msgID message.MsgID, req message.Marshaler) error {
 // Recv ...
 func (c *Peer) Recv() (message.MsgID, message.Message, error) {
 	sizeBuf := []byte{0, 0, 0, 0}
+	utils.SetDeadlineSeconds(c.conn, 10)
 	if _, err := io.ReadFull(c.rw, sizeBuf); err != nil {
 		return 0, nil, fmt.Errorf("client: recv size: %v", err)
 	}
@@ -113,6 +118,7 @@ func (c *Peer) Recv() (message.MsgID, message.Message, error) {
 	}
 
 	buf := make([]byte, msgSize)
+	utils.SetDeadlineSeconds(c.conn, 10)
 	if _, err := io.ReadFull(c.rw, buf); err != nil {
 		return 0, nil, fmt.Errorf("client: recv msg: %v", err)
 	}
@@ -173,52 +179,44 @@ keepalive:
 
 // Download ...
 func (c *Peer) Download(pending chan SinglePieceData, done chan SinglePieceData) error {
+	errCh := make(chan error)
 	go func() {
-		for {
-			id, msg, err := c.Recv()
-			if err != nil {
-				fmt.Printf("client: read message failed: %v\n", err)
-				return
-			}
-			if msg == nil {
-				fmt.Printf("keep alive\n")
-				continue
-			}
-			_ = id
-			c.msgch <- msg
-		}
+		errCh <- c.poll()
 	}()
-	if pending == nil {
-		for {
-			select {
-			case msg := <-c.msgch:
-				c.readMessage(msg)
-			case have := <-c.HaveCh:
-				if err := c.Send(message.MsgHave, &message.Have{Index: have}); err != nil {
-					fmt.Printf("error send have: %v\n", err)
-				}
-			}
+
+	for {
+		select {
+		case err := <-errCh:
+			return err
+		default:
 		}
-		return nil
-	}
-	for piece := range pending {
+
+		piece, ok := c.getPendingPiece(pending)
+		if !ok {
+			return nil
+		}
+
 		c.curPiece = &piece
 		if !c.HerBitField.HasPiece(piece.Index) {
-			fmt.Printf("client %s doesn't have piece %d\n", c.HerPeerID, piece.Index)
+			log.Printf("client %s doesn't have piece %d\n", c.HerPeerID, piece.Index)
 			pending <- piece
 
 			if have := c.MyBitField.HasPiece(piece.Index); have {
 				if err := c.Send(message.MsgHave, &message.Have{Index: piece.Index}); err != nil {
-					fmt.Printf("error send have: %v\n", err)
+					log.Printf("error send have: %v\n", err)
+					return fmt.Errorf("peer: send have failed: %v", err)
 				}
 			}
 
 			select {
 			case msg := <-c.msgch:
-				c.readMessage(msg)
+				if err := c.readMessage(msg); err != nil {
+					return err
+				}
 			case have := <-c.HaveCh:
 				if err := c.Send(message.MsgHave, &message.Have{Index: have}); err != nil {
-					fmt.Printf("error send have: %v\n", err)
+					log.Printf("error send have: %v\n", err)
+					return err
 				}
 			default:
 				time.Sleep(time.Millisecond * 100)
@@ -227,21 +225,48 @@ func (c *Peer) Download(pending chan SinglePieceData, done chan SinglePieceData)
 		}
 
 		if err := c.downloadPiece(&piece); err != nil {
-			fmt.Printf("download piece failed: %v\n", err)
+			log.Printf("download piece failed: %v\n", err)
 			pending <- piece
 			return fmt.Errorf("download piece failed: %v", err)
 		}
 
 		if err := c.checkIntegrity(&piece); err != nil {
-			fmt.Printf("check integrity failed: %v\n", err)
+			log.Printf("check integrity failed: %v\n", err)
 			pending <- piece
 			return fmt.Errorf("check integrity failed: %v", err)
 		}
 
 		done <- piece
 	}
+}
 
-	return nil
+func (c *Peer) poll() error {
+	for {
+		id, msg, err := c.Recv()
+		if err != nil {
+			log.Printf("client: read message failed: %v\n", err)
+			return err
+		}
+		if msg == nil {
+			log.Printf("keep alive\n")
+			continue
+		}
+		_ = id
+		c.msgch <- msg
+	}
+}
+
+func (c *Peer) getPendingPiece(pending chan SinglePieceData) (SinglePieceData, bool) {
+	select {
+	case <-c.Ctx.Done():
+		log.Printf("peer: context done")
+		return SinglePieceData{}, false
+	case <-time.After(time.Second * 3):
+		log.Printf("peer: no piece to download for seconds. exiting.")
+		return SinglePieceData{}, false
+	case piece := <-pending:
+		return piece, true
+	}
 }
 
 func (c *Peer) downloadPiece(piece *SinglePieceData) error {
@@ -271,16 +296,19 @@ func (c *Peer) downloadPiece(piece *SinglePieceData) error {
 
 				c.backlog++
 				c.requested += blockSize
-				//fmt.Printf("backlog: %d, requested: %d\n", c.backlog, c.requested)
+				//log.Printf("backlog: %d, requested: %d\n", c.backlog, c.requested)
 			}
 		}
 
 		select {
 		case msg := <-c.msgch:
-			c.readMessage(msg)
+			if err := c.readMessage(msg); err != nil {
+				return err
+			}
 		case have := <-c.HaveCh:
 			if err := c.Send(message.MsgHave, &message.Have{Index: have}); err != nil {
-				fmt.Printf("error send have: %v\n", err)
+				log.Printf("error send have: %v\n", err)
+				return err
 			}
 		}
 	}
@@ -295,39 +323,39 @@ func (c *Peer) readMessage(msg message.Message) error {
 		return fmt.Errorf("peer sent unknown message: %v", reflect.TypeOf(typed).String())
 	case *message.Choke:
 		c.unchoked = false
-		fmt.Printf("peer choked\n")
+		log.Printf("peer choked\n")
 	case *message.UnChoke:
 		c.unchoked = true
-		fmt.Printf("peer not choked\n")
+		log.Printf("peer not choked\n")
 	case *message.Interested:
-		fmt.Printf("peer interested\n")
+		log.Printf("peer interested\n")
 	case *message.Have:
 		c.HerBitField.SetPiece(typed.Index)
-		// fmt.Printf("peer has piece %d\n", typed.Index)
+		// log.Printf("peer has piece %d\n", typed.Index)
 	case *message.Request:
 		request := msg.(*message.Request)
 		if !c.MyBitField.HasPiece(request.Index) {
-			fmt.Printf("peer requests piece I don't have: %d\n", request.Index)
-			break
+			log.Printf("peer requests piece I don't have: %d\n", request.Index)
+			return fmt.Errorf("peer: unexpected piece")
 		}
 		piece, err := c.PM.ReadPiece(request.Index)
 		if err != nil {
-			fmt.Printf("read piece failed: %d, %v\n", request.Index, err)
-			break
+			log.Printf("read piece failed: %d, %v\n", request.Index, err)
+			return fmt.Errorf("peer: read piece failed: %v", err)
 		}
 		if request.Begin+request.Length > len(piece) {
-			fmt.Printf("peer requests piece out of bound: %d\n", request.Index)
-			break
+			log.Printf("peer requests piece out of bound: %d\n", request.Index)
+			return fmt.Errorf("peer: request piece out of bound")
 		}
 		if err := c.Send(message.MsgPiece, &message.Piece{
 			Index: request.Index,
 			Begin: request.Begin,
 			Data:  piece[request.Begin : request.Begin+request.Length],
 		}); err != nil {
-			fmt.Printf("error sent piece: %v\n", err)
-			break
+			log.Printf("error sent piece: %v\n", err)
+			return fmt.Errorf("peer: error sending piece: %v", err)
 		}
-		// fmt.Printf("upload piece: %d\n", request.Index)
+		log.Printf("upload piece to %s: %d\n", c.PeerAddr, request.Index)
 	case *message.Piece:
 		pieceRecv := msg.(*message.Piece)
 		if pieceRecv.Index != piece.Index {

@@ -1,6 +1,7 @@
 package tracker
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -57,7 +58,7 @@ func testTracker(cmd *cobra.Command, args []string) error {
 			InfoHash: f.InfoHash(),
 			MyPeerID: trackercommon.MyPeerID,
 		}
-		r, err := t.Announce()
+		r, err := t.Announce(context.TODO())
 		if err != nil {
 			return err
 		}
@@ -68,7 +69,7 @@ func testTracker(cmd *cobra.Command, args []string) error {
 			InfoHash: f.InfoHash(),
 			MyPeerID: trackercommon.MyPeerID,
 		}
-		r, err := t.Announce()
+		r, err := t.Announce(context.TODO())
 		if err != nil {
 			return err
 		}

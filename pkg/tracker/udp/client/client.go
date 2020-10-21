@@ -1,6 +1,7 @@
 package trackerudpclient
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"net"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/movsb/torrent/pkg/common"
+	"github.com/movsb/torrent/pkg/utils"
 )
 
 func init() {
@@ -27,7 +29,8 @@ type Client struct {
 }
 
 // Announce ...
-func (t *Client) Announce() (*AnnounceResponse, error) {
+// Ctx isn't used.
+func (t *Client) Announce(ctx context.Context) (*AnnounceResponse, error) {
 	if err := t.dial(); err != nil {
 		return nil, err
 	}
@@ -79,13 +82,14 @@ func (t *Client) connect() (*ConnectResponse, error) {
 		return nil, fmt.Errorf("marshal error: %v", err)
 	}
 
-	t.conn.SetDeadline(time.Now().Add(time.Second * 10))
+	// How to use context here?
+	utils.SetDeadlineSeconds(t.conn, 10)
 	if _, err = t.conn.Write(b); err != nil {
 		return nil, fmt.Errorf("connect error: %v", err)
 	}
 
 	b = make([]byte, 16)
-	t.conn.SetDeadline(time.Now().Add(time.Second * 10))
+	utils.SetDeadlineSeconds(t.conn, 10)
 	_, err = t.conn.Read(b)
 	if err != nil {
 		return nil, fmt.Errorf("read error: %v", err)
@@ -127,13 +131,13 @@ func (t *Client) announce(connectionID uint64) (*AnnounceResponse, error) {
 		return nil, fmt.Errorf("marshal error: %v", err)
 	}
 
-	t.conn.SetDeadline(time.Now().Add(time.Second * 10))
+	utils.SetDeadlineSeconds(t.conn, 10)
 	if _, err := t.conn.Write(b); err != nil {
 		return nil, fmt.Errorf("announce error: %v", err)
 	}
 
 	b = make([]byte, 65536)
-	t.conn.SetDeadline(time.Now().Add(time.Second * 10))
+	utils.SetDeadlineSeconds(t.conn, 10)
 	n, err := t.conn.Read(b)
 	if err != nil {
 		return nil, fmt.Errorf("read announce failed: %v", err)

@@ -101,7 +101,7 @@ func (m *BitField) calc(index int, fn func(byteIndex int, bitMask byte)) {
 	fn(byteIndex, bitMask)
 }
 
-// AllOnes ...
+// AllOnes indicates that we have all pieces.
 func (m *BitField) AllOnes() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -113,5 +113,5 @@ func (m *BitField) AllOnes() bool {
 	}
 
 	lastByte := m.Fields[m.byteCount-1]
-	return lastByte|(0xFF>>m.bitsRemain) == 0xFF
+	return ^lastByte == 0xFF>>m.bitsRemain
 }

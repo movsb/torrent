@@ -1,6 +1,7 @@
 package trackerudpclient
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -21,7 +22,7 @@ func TestClient(t *testing.T) {
 		MyPeerID: trackercommon.MyPeerID,
 	}
 
-	resp, err := ut.Announce()
+	resp, err := ut.Announce(context.TODO())
 	if err != nil {
 		t.Fatal(err)
 	}

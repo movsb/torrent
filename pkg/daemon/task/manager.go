@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -75,5 +76,5 @@ func (t *Manager) CreateTask(file string, savePath string, bf byte) {
 
 	t.tasks[tf.InfoHash()] = task
 
-	go task.Run()
+	go task.Run(context.TODO())
 }
