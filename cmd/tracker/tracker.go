@@ -16,7 +16,8 @@ import (
 // AddCommands ...
 func AddCommands(root *cobra.Command) {
 	trackerCmd := &cobra.Command{
-		Use: "tracker",
+		Use:   "tracker",
+		Short: `Tracker related commands`,
 	}
 	root.AddCommand(trackerCmd)
 

@@ -1,7 +1,8 @@
 package main
 
 import (
-	"log"
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -30,7 +31,11 @@ func main() {
 		rootCmd.SetArgs([]string{"server"})
 	}
 
-	if err := rootCmd.Execute(); err != nil {
-		log.Println(err)
+	ctx, cancel := context.WithCancel(context.TODO())
+	defer cancel()
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "%v", err)
+		os.Exit(1)
 	}
 }

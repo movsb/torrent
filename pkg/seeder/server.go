@@ -66,7 +66,7 @@ func (s *Server) handle(conn net.Conn) {
 		conn, 10, trackercommon.MyPeerID,
 		func(m *message.Handshake) error {
 			if s.MyPeerID.Equal(m.PeerID) {
-				fmt.Printf("self connect")
+				fmt.Printf("self connect\n")
 				return fmt.Errorf("self connect")
 			}
 			li, err = s.LoadTorrent.LoadTorrent(m.InfoHash)
@@ -78,7 +78,7 @@ func (s *Server) handle(conn net.Conn) {
 	)
 
 	if err != nil {
-		fmt.Printf("HandshakeIncoming failed: %v", err)
+		fmt.Printf("HandshakeIncoming failed: %v\n", err)
 		return
 	}
 

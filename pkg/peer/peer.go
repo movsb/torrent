@@ -195,7 +195,7 @@ func (c *Peer) Download(pending chan SinglePieceData, done chan SinglePieceData)
 				c.readMessage(msg)
 			case have := <-c.HaveCh:
 				if err := c.Send(message.MsgHave, &message.Have{Index: have}); err != nil {
-					fmt.Printf("error send have: %v", err)
+					fmt.Printf("error send have: %v\n", err)
 				}
 			}
 		}
@@ -209,7 +209,7 @@ func (c *Peer) Download(pending chan SinglePieceData, done chan SinglePieceData)
 
 			if have := c.MyBitField.HasPiece(piece.Index); have {
 				if err := c.Send(message.MsgHave, &message.Have{Index: piece.Index}); err != nil {
-					fmt.Printf("error send have: %v", err)
+					fmt.Printf("error send have: %v\n", err)
 				}
 			}
 
@@ -218,7 +218,7 @@ func (c *Peer) Download(pending chan SinglePieceData, done chan SinglePieceData)
 				c.readMessage(msg)
 			case have := <-c.HaveCh:
 				if err := c.Send(message.MsgHave, &message.Have{Index: have}); err != nil {
-					fmt.Printf("error send have: %v", err)
+					fmt.Printf("error send have: %v\n", err)
 				}
 			default:
 				time.Sleep(time.Millisecond * 100)
@@ -280,7 +280,7 @@ func (c *Peer) downloadPiece(piece *SinglePieceData) error {
 			c.readMessage(msg)
 		case have := <-c.HaveCh:
 			if err := c.Send(message.MsgHave, &message.Have{Index: have}); err != nil {
-				fmt.Printf("error send have: %v", err)
+				fmt.Printf("error send have: %v\n", err)
 			}
 		}
 	}
@@ -307,16 +307,16 @@ func (c *Peer) readMessage(msg message.Message) error {
 	case *message.Request:
 		request := msg.(*message.Request)
 		if !c.MyBitField.HasPiece(request.Index) {
-			fmt.Printf("peer requests piece I don't have: %d", request.Index)
+			fmt.Printf("peer requests piece I don't have: %d\n", request.Index)
 			break
 		}
 		piece, err := c.PM.ReadPiece(request.Index)
 		if err != nil {
-			fmt.Printf("read piece failed: %d, %v", request.Index, err)
+			fmt.Printf("read piece failed: %d, %v\n", request.Index, err)
 			break
 		}
 		if request.Begin+request.Length > len(piece) {
-			fmt.Printf("peer requests piece out of bound: %d", request.Index)
+			fmt.Printf("peer requests piece out of bound: %d\n", request.Index)
 			break
 		}
 		if err := c.Send(message.MsgPiece, &message.Piece{
@@ -324,7 +324,7 @@ func (c *Peer) readMessage(msg message.Message) error {
 			Begin: request.Begin,
 			Data:  piece[request.Begin : request.Begin+request.Length],
 		}); err != nil {
-			fmt.Printf("error sent piece: %v", err)
+			fmt.Printf("error sent piece: %v\n", err)
 			break
 		}
 		// fmt.Printf("upload piece: %d\n", request.Index)
