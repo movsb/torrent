@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"fmt"
+	"log"
 
 	"github.com/movsb/torrent/pkg/common"
 )
@@ -54,7 +55,7 @@ func (m *Handshake) Unmarshal(r []byte) error {
 		return fmt.Errorf("handshake: invalid protocol: %s", btProto)
 	}
 	if reserved := r[20 : 20+8]; !bytes.Equal(reserved, handshakeReserved[:]) {
-		fmt.Printf("handshake: invalid reserved: %x\n", reserved)
+		log.Printf("handshake: invalid reserved: %x\n", reserved)
 		// return fmt.Errorf("handshake: invalid reserved: %x", reserved)
 	}
 

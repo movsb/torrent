@@ -47,7 +47,6 @@ func (t *Task) AddClient(client *peer.Peer) {
 		t.mu.Lock()
 		defer t.mu.Unlock()
 		delete(t.clients, client.PeerAddr)
-		log.Printf("delete client %v\n", client.PeerAddr)
 	}()
 }
 

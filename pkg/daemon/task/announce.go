@@ -40,7 +40,7 @@ func (t *Task) announce(ctx context.Context) error {
 
 	execute()
 
-	ticker := time.NewTicker(time.Minute)
+	ticker := time.NewTicker(time.Minute * 10)
 	defer ticker.Stop()
 
 	for {

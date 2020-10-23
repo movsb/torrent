@@ -18,6 +18,9 @@ func (t *Task) initPieces() {
 			Hash:   t.File.PieceHashes.Index(i),
 			Length: t.File.PieceLength,
 		}
+		if i >= 10 {
+			break
+		}
 	}
 
 	lastPieceIndex, lastPieceLength := nPieces-1, t.File.PieceLength
@@ -37,35 +40,15 @@ func (t *Task) initPieces() {
 }
 
 func (t *Task) savePiece(ctx context.Context) {
-	donePieces := 0
+	//donePieces := 0
+	donePieces := t.File.PieceHashes.Count() - 10
 	nPieces := t.File.PieceHashes.Count()
 
 	lastTime := time.Now()
 	lastSpeed := float64(0)
 	lastDonePieces := 0
 
-	save := func(piece peer.SinglePieceData) {
-		err := t.PM.WritePiece(piece.Index, piece.Data)
-		if err != nil {
-			log.Printf("WritePiece failed: %s", err)
-			return
-		}
-
-		// TODO(movsb): send this to all peers.
-		t.BitField.SetPiece(piece.Index)
-		go func(index int) {
-			t.mu.RLock()
-			defer t.mu.RUnlock()
-
-			for _, client := range t.clients {
-				select {
-				case client.HaveCh <- index:
-				default:
-					log.Printf("task.savePiece: failed to send have to peer: %s", client.PeerAddr)
-				}
-			}
-		}(piece.Index)
-
+	speed := func() {
 		now := time.Now()
 		if sub := now.Sub(lastTime); sub >= time.Millisecond*500 {
 			n := donePieces - lastDonePieces
@@ -92,13 +75,42 @@ func (t *Task) savePiece(ctx context.Context) {
 		)
 	}
 
+	save := func(piece peer.SinglePieceData) {
+		if t.BitField.HasPiece(piece.Index) {
+			log.Printf("task.savePiece: duplicate piece: %d", piece.Index)
+			return
+		}
+		err := t.PM.WritePiece(piece.Index, piece.Data)
+		if err != nil {
+			log.Printf("WritePiece failed: %s", err)
+			return
+		}
+
+		t.BitField.SetPiece(piece.Index)
+
+		go func(index int) {
+			t.mu.RLock()
+			defer t.mu.RUnlock()
+
+			for _, client := range t.clients {
+				select {
+				case client.HaveCh <- index:
+				default:
+					log.Printf("task.savePiece: failed to send have to peer: %s", client.PeerAddr)
+				}
+			}
+		}(piece.Index)
+
+		speed()
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			log.Printf("task.savePiece: context done")
 		case piece := <-t.done:
 			save(piece)
-			if donePieces++; donePieces == nPieces {
+			if donePieces == nPieces {
 				log.Printf("task.savePiece: task done")
 				return
 			}

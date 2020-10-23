@@ -2,6 +2,7 @@ package seeder
 
 import (
 	"fmt"
+	"log"
 	"net"
 
 	"github.com/movsb/torrent/pkg/common"
@@ -78,7 +79,7 @@ func (s *Server) handle(conn net.Conn) {
 	)
 
 	if err != nil {
-		fmt.Printf("HandshakeIncoming failed: %v\n", err)
+		log.Printf("HandshakeIncoming failed: %v\n", err)
 		return
 	}
 
@@ -94,14 +95,14 @@ func (s *Server) handle(conn net.Conn) {
 	c.SetConn(conn)
 
 	if err := c.Send(message.MsgBitField, li.BF); err != nil {
-		fmt.Printf("error send bitbield: %v\n", err)
+		log.Printf("error send bitbield: %v\n", err)
 		return
 	}
 	if err := c.Send(message.MsgUnChoke, message.UnChoke{}); err != nil {
-		fmt.Printf("error send unchoked: %v\n", err)
+		log.Printf("error send unchoked: %v\n", err)
 	}
 	if err := c.Send(message.MsgInterested, message.Interested{}); err != nil {
-		fmt.Printf("error send unchoked: %v\n", err)
+		log.Printf("error send unchoked: %v\n", err)
 	}
 
 	closeConn = nil

@@ -16,7 +16,6 @@ import (
 	"github.com/movsb/torrent/pkg/common"
 	"github.com/movsb/torrent/pkg/daemon/store"
 	"github.com/movsb/torrent/pkg/message"
-	"github.com/movsb/torrent/pkg/utils"
 )
 
 // SinglePieceData ...
@@ -33,16 +32,16 @@ type Peer struct {
 	InfoHash  common.Hash
 	HerPeerID common.PeerID
 	PeerAddr  string
-	conn      net.Conn
 
-	rw *bufio.ReadWriter
+	conn net.Conn
+	rw   *bufio.ReadWriter
 
 	MyBitField  *message.BitField
 	HerBitField *message.BitField
 
 	PM *store.PieceManager
 
-	msgch    chan message.Message
+	msgCh    chan message.Message
 	HaveCh   chan int
 	curPiece *SinglePieceData
 
@@ -60,9 +59,8 @@ func (c *Peer) SetConn(conn net.Conn) {
 		bufio.NewWriter(conn),
 	)
 
-	// TODO(movsb): init
-	c.msgch = make(chan message.Message, 1)
-	c.HaveCh = make(chan int, 3)
+	c.msgCh = make(chan message.Message)
+	c.HaveCh = make(chan int, 16)
 }
 
 // Close ...
@@ -83,7 +81,6 @@ func (c *Peer) Send(msgID message.MsgID, req message.Marshaler) error {
 	}
 	sizeBuf := []byte{0, 0, 0, 0}
 	binary.BigEndian.PutUint32(sizeBuf, 1+uint32(len(b)))
-	utils.SetDeadlineSeconds(c.conn, 10)
 	if _, err := c.rw.Write(sizeBuf); err != nil {
 		return fmt.Errorf("client: send: %v", err)
 	}
@@ -102,7 +99,6 @@ func (c *Peer) Send(msgID message.MsgID, req message.Marshaler) error {
 // Recv ...
 func (c *Peer) Recv() (message.MsgID, message.Message, error) {
 	sizeBuf := []byte{0, 0, 0, 0}
-	utils.SetDeadlineSeconds(c.conn, 10)
 	if _, err := io.ReadFull(c.rw, sizeBuf); err != nil {
 		return 0, nil, fmt.Errorf("client: recv size: %v", err)
 	}
@@ -118,7 +114,6 @@ func (c *Peer) Recv() (message.MsgID, message.Message, error) {
 	}
 
 	buf := make([]byte, msgSize)
-	utils.SetDeadlineSeconds(c.conn, 10)
 	if _, err := io.ReadFull(c.rw, buf); err != nil {
 		return 0, nil, fmt.Errorf("client: recv msg: %v", err)
 	}
@@ -179,52 +174,31 @@ keepalive:
 
 // Download ...
 func (c *Peer) Download(pending chan SinglePieceData, done chan SinglePieceData) error {
-	errCh := make(chan error)
-	go func() {
-		errCh <- c.poll()
-	}()
+	go c.poll()
 
 	for {
-		select {
-		case err := <-errCh:
-			return err
-		default:
-		}
-
 		piece, ok := c.getPendingPiece(pending)
 		if !ok {
 			return nil
 		}
 
-		c.curPiece = &piece
 		if !c.HerBitField.HasPiece(piece.Index) {
 			log.Printf("client %s doesn't have piece %d\n", c.HerPeerID, piece.Index)
 			pending <- piece
 
-			if have := c.MyBitField.HasPiece(piece.Index); have {
-				if err := c.Send(message.MsgHave, &message.Have{Index: piece.Index}); err != nil {
-					log.Printf("error send have: %v\n", err)
-					return fmt.Errorf("peer: send have failed: %v", err)
-				}
-			}
+			// if have := c.MyBitField.HasPiece(piece.Index); have {
+			// 	if err := c.Send(message.MsgHave, &message.Have{Index: piece.Index}); err != nil {
+			// 		log.Printf("error send have: %v\n", err)
+			// 		return fmt.Errorf("peer: send have failed: %v", err)
+			// 	}
+			// }
 
-			select {
-			case msg := <-c.msgch:
-				if err := c.readMessage(msg); err != nil {
-					return err
-				}
-			case have := <-c.HaveCh:
-				if err := c.Send(message.MsgHave, &message.Have{Index: have}); err != nil {
-					log.Printf("error send have: %v\n", err)
-					return err
-				}
-			default:
-				time.Sleep(time.Millisecond * 100)
-			}
+			time.Sleep(time.Second)
+
 			continue
 		}
 
-		if err := c.downloadPiece(&piece); err != nil {
+		if err := c.work(&piece); err != nil {
 			log.Printf("download piece failed: %v\n", err)
 			pending <- piece
 			return fmt.Errorf("download piece failed: %v", err)
@@ -240,69 +214,34 @@ func (c *Peer) Download(pending chan SinglePieceData, done chan SinglePieceData)
 	}
 }
 
-func (c *Peer) poll() error {
-	for {
-		id, msg, err := c.Recv()
-		if err != nil {
-			log.Printf("client: read message failed: %v\n", err)
-			return err
-		}
-		if msg == nil {
-			log.Printf("keep alive\n")
-			continue
-		}
-		_ = id
-		c.msgch <- msg
-	}
-}
-
 func (c *Peer) getPendingPiece(pending chan SinglePieceData) (SinglePieceData, bool) {
 	select {
 	case <-c.Ctx.Done():
 		log.Printf("peer: context done")
-		return SinglePieceData{}, false
-	case <-time.After(time.Second * 3):
-		log.Printf("peer: no piece to download for seconds. exiting.")
 		return SinglePieceData{}, false
 	case piece := <-pending:
 		return piece, true
 	}
 }
 
-func (c *Peer) downloadPiece(piece *SinglePieceData) error {
-	c.requested = 0
-	c.downloaded = 0
-	c.backlog = 0
+func (c *Peer) work(piece *SinglePieceData) error {
+	c.reset(piece)
 
-	if len(piece.Data) != piece.Length {
-		piece.Data = make([]byte, piece.Length)
-	}
+	c.curPiece = piece
+	defer func() {
+		c.curPiece = nil
+	}()
 
 	for c.downloaded < piece.Length {
-		if c.unchoked {
-			for c.backlog < 5 && c.requested < piece.Length {
-				blockSize := message.MaxRequestLength
-				if c.requested+blockSize > piece.Length {
-					blockSize = piece.Length - c.requested
-				}
-
-				if err := c.Send(message.MsgRequest, &message.Request{
-					Index:  piece.Index,
-					Begin:  c.requested,
-					Length: blockSize,
-				}); err != nil {
-					return fmt.Errorf("send request failed")
-				}
-
-				c.backlog++
-				c.requested += blockSize
-				//log.Printf("backlog: %d, requested: %d\n", c.backlog, c.requested)
-			}
+		if err := c.sendRequests(piece); err != nil {
+			return err
 		}
-
 		select {
-		case msg := <-c.msgch:
-			if err := c.readMessage(msg); err != nil {
+		case msg := <-c.msgCh:
+			if msg == nil {
+				return fmt.Errorf("peer.work error on poll")
+			}
+			if err := c.handleMessage(msg); err != nil {
 				return err
 			}
 		case have := <-c.HaveCh:
@@ -310,13 +249,70 @@ func (c *Peer) downloadPiece(piece *SinglePieceData) error {
 				log.Printf("error send have: %v\n", err)
 				return err
 			}
+		case <-c.Ctx.Done():
+			log.Printf("peer.work: context done: %v", c.Ctx.Err())
+			return nil
 		}
 	}
 
 	return nil
 }
 
-func (c *Peer) readMessage(msg message.Message) error {
+func (c *Peer) reset(piece *SinglePieceData) {
+	c.requested = 0
+	c.downloaded = 0
+	c.backlog = 0
+
+	if len(piece.Data) != piece.Length {
+		piece.Data = make([]byte, piece.Length)
+	}
+}
+
+// poll polls messages from peer and sends it to
+// the message channel. On error, the message will be nil.
+func (c *Peer) poll() {
+	for {
+		_, msg, err := c.Recv()
+		if err != nil {
+			log.Printf("peer.poll failed: %v", err)
+			c.msgCh <- nil
+			return
+		}
+		if msg == nil {
+			log.Printf("peer.poll keepalive from %s", c.PeerAddr)
+			continue
+		}
+		select {
+		case <-c.Ctx.Done():
+			log.Printf("peer.poll context done: %v", c.Ctx.Err())
+			return
+		case c.msgCh <- msg:
+		}
+	}
+}
+
+func (c *Peer) sendRequests(piece *SinglePieceData) error {
+	for c.unchoked && c.backlog < 5 && c.downloaded < piece.Length && c.requested < piece.Length {
+		blockSize := message.MaxRequestLength
+		if c.requested+blockSize > piece.Length {
+			blockSize = piece.Length - c.requested
+		}
+
+		if err := c.Send(message.MsgRequest, &message.Request{
+			Index:  piece.Index,
+			Begin:  c.requested,
+			Length: blockSize,
+		}); err != nil {
+			return fmt.Errorf("send request failed")
+		}
+
+		c.backlog++
+		c.requested += blockSize
+	}
+	return nil
+}
+
+func (c *Peer) handleMessage(msg message.Message) error {
 	piece := c.curPiece
 	switch typed := msg.(type) {
 	default:
@@ -370,6 +366,10 @@ func (c *Peer) readMessage(msg message.Message) error {
 		copy(piece.Data[pieceRecv.Begin:], pieceRecv.Data)
 		c.downloaded += len(pieceRecv.Data)
 		c.backlog--
+		//log.Printf("receive piece: index=%d,begin:%d,length:%d backlog:%d,requested:%d,downloaded:%d",
+		//	pieceRecv.Index, pieceRecv.Begin, len(pieceRecv.Data),
+		//	c.backlog, c.requested, c.downloaded,
+		//)
 	}
 
 	return nil
