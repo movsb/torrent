@@ -71,7 +71,8 @@ func (t *Manager) CreateTask(file string, savePath string, bf byte) {
 		BitField: message.NewBitField(tf.PieceHashes.Count(), bf),
 		PM:       store.NewPieceManager(tf),
 
-		clients: make(map[string]*peer.Peer),
+		busyPeers: make(map[string]*peer.Peer),
+		idlePeers: make(map[string]*peer.Peer),
 	}
 
 	t.tasks[tf.InfoHash()] = task

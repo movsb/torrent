@@ -1,6 +1,9 @@
 package download
 
 import (
+	"time"
+
+	"github.com/movsb/torrent/pkg/daemon/task"
 	"github.com/spf13/cobra"
 )
 
@@ -17,5 +20,8 @@ func AddCommands(root *cobra.Command) {
 }
 
 func downloadTorrent(cmd *cobra.Command, args []string) error {
+	tm := task.NewManager()
+	tm.CreateTask(args[0], ".", 0x00)
+	time.Sleep(time.Hour)
 	return nil
 }

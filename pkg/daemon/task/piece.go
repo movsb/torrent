@@ -1,6 +1,7 @@
 package task
 
 import (
+	"container/list"
 	"context"
 	"fmt"
 	"log"
@@ -10,38 +11,35 @@ import (
 )
 
 func (t *Task) initPieces() {
+	list := list.New()
 	nPieces := t.File.PieceHashes.Count()
-	chPieces := make(chan peer.SinglePieceData, nPieces)
-	for i := 0; i < nPieces-1; i++ {
-		chPieces <- peer.SinglePieceData{
+	remain := int(t.File.Length % int64(t.File.PieceLength))
+
+	for i := 0; i < nPieces; i++ {
+		length := t.File.PieceLength
+		if i == nPieces-1 && remain != 0 {
+			length = remain
+		}
+
+		piece := peer.SinglePieceData{
 			Index:  i,
 			Hash:   t.File.PieceHashes.Index(i),
-			Length: t.File.PieceLength,
+			Length: length,
 		}
-		if i >= 10 {
-			break
-		}
+
+		list.PushBack(piece)
+
+		//if i >= 10 {
+		//	break
+		//}
 	}
 
-	lastPieceIndex, lastPieceLength := nPieces-1, t.File.PieceLength
-	if remain := int(t.File.Length % int64(t.File.PieceLength)); remain != 0 {
-		lastPieceLength = remain
-	}
-	chPieces <- peer.SinglePieceData{
-		Index:  lastPieceIndex,
-		Hash:   t.File.PieceHashes.Index(lastPieceIndex),
-		Length: lastPieceLength,
-	}
-
-	chResult := make(chan peer.SinglePieceData)
-
-	t.pending = chPieces
-	t.done = chResult
+	t.pieces = list
+	t.done = make(chan peer.SinglePieceData)
 }
 
 func (t *Task) savePiece(ctx context.Context) {
-	//donePieces := 0
-	donePieces := t.File.PieceHashes.Count() - 10
+	donePieces := 0
 	nPieces := t.File.PieceHashes.Count()
 
 	lastTime := time.Now()
@@ -66,24 +64,28 @@ func (t *Task) savePiece(ctx context.Context) {
 			speedString = fmt.Sprintf("%.2fB/s", lastSpeed/(1<<0))
 		}
 
+		t.mu.RLock()
+		defer t.mu.RUnlock()
+
 		donePieces++
 		percent := float64(donePieces) / float64(t.File.PieceHashes.Count()) * 100
-		fmt.Printf("%0.2f piece downloaded, piece: %d / %d, size: %d / %d, speed: %s\n",
+		fmt.Printf("%0.2f piece downloaded, piece: %d / %d, size: %d / %d, speed: %s, idle: %d, busy: %d\n",
 			percent, donePieces, nPieces,
 			donePieces*t.File.PieceLength, t.File.Length,
 			speedString,
+			len(t.idlePeers), len(t.busyPeers),
 		)
 	}
 
-	save := func(piece peer.SinglePieceData) {
+	save := func(piece peer.SinglePieceData) bool {
 		if t.BitField.HasPiece(piece.Index) {
 			log.Printf("task.savePiece: duplicate piece: %d", piece.Index)
-			return
+			return false
 		}
 		err := t.PM.WritePiece(piece.Index, piece.Data)
 		if err != nil {
 			log.Printf("WritePiece failed: %s", err)
-			return
+			return false
 		}
 
 		t.BitField.SetPiece(piece.Index)
@@ -92,7 +94,15 @@ func (t *Task) savePiece(ctx context.Context) {
 			t.mu.RLock()
 			defer t.mu.RUnlock()
 
-			for _, client := range t.clients {
+			for _, client := range t.busyPeers {
+				select {
+				case client.HaveCh <- index:
+				default:
+					log.Printf("task.savePiece: failed to send have to peer: %s", client.PeerAddr)
+				}
+			}
+
+			for _, client := range t.idlePeers {
 				select {
 				case client.HaveCh <- index:
 				default:
@@ -102,6 +112,7 @@ func (t *Task) savePiece(ctx context.Context) {
 		}(piece.Index)
 
 		speed()
+		return true
 	}
 
 	for {
@@ -109,8 +120,7 @@ func (t *Task) savePiece(ctx context.Context) {
 		case <-ctx.Done():
 			log.Printf("task.savePiece: context done")
 		case piece := <-t.done:
-			save(piece)
-			if donePieces == nPieces {
+			if save(piece) && donePieces == nPieces {
 				log.Printf("task.savePiece: task done")
 				return
 			}

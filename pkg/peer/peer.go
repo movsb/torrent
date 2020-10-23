@@ -11,7 +11,6 @@ import (
 	"log"
 	"net"
 	"reflect"
-	"time"
 
 	"github.com/movsb/torrent/pkg/common"
 	"github.com/movsb/torrent/pkg/daemon/store"
@@ -112,7 +111,7 @@ func (c *Peer) Recv() (message.MsgID, message.Message, error) {
 	msgSize := binary.BigEndian.Uint32(sizeBuf)
 	// keep alive
 	if msgSize == 0 {
-		log.Printf("keep alive from: %v", c.HerPeerID)
+		// log.Printf("keep alive from: %v", c.HerPeerID)
 		return 0, nil, nil
 	}
 	if msgSize > 1<<20 {
@@ -179,49 +178,23 @@ keepalive:
 }
 
 // Download ...
-func (c *Peer) Download(pending chan SinglePieceData, done chan SinglePieceData) error {
-	go c.Run()
-	go c.poll()
-
-	for {
-		piece, ok := c.getPendingPiece(pending)
-		if !ok {
-			return nil
-		}
-
-		if !c.HerBitField.HasPiece(piece.Index) {
-			log.Printf("client %s doesn't have piece %d\n", c.HerPeerID, piece.Index)
-			pending <- piece
-
-			// if have := c.MyBitField.HasPiece(piece.Index); have {
-			// 	if err := c.Send(message.MsgHave, &message.Have{Index: piece.Index}); err != nil {
-			// 		log.Printf("error send have: %v\n", err)
-			// 		return fmt.Errorf("peer: send have failed: %v", err)
-			// 	}
-			// }
-
-			time.Sleep(time.Second)
-
-			continue
-		}
-
-		c.donePiece = make(chan error)
-		c.chSetPiece <- &piece
-		if err := <-c.donePiece; err != nil {
-			log.Printf("download piece failed: %v\n", err)
-			pending <- piece
-			return fmt.Errorf("download piece failed: %v", err)
-		}
-		close(c.donePiece)
-
-		if err := c.checkIntegrity(&piece); err != nil {
-			log.Printf("check integrity failed: %v\n", err)
-			pending <- piece
-			return fmt.Errorf("check integrity failed: %v", err)
-		}
-
-		done <- piece
+func (c *Peer) Download(piece SinglePieceData, done chan SinglePieceData) error {
+	c.donePiece = make(chan error)
+	c.chSetPiece <- &piece
+	if err := <-c.donePiece; err != nil {
+		log.Printf("download piece failed: %v\n", err)
+		return fmt.Errorf("download piece failed: %v", err)
 	}
+	close(c.donePiece)
+
+	if err := c.checkIntegrity(&piece); err != nil {
+		log.Printf("check integrity failed: %v\n", err)
+		return fmt.Errorf("check integrity failed: %v", err)
+	}
+
+	done <- piece
+
+	return nil
 }
 
 func (c *Peer) getPendingPiece(pending chan SinglePieceData) (SinglePieceData, bool) {
@@ -286,7 +259,7 @@ func (c *Peer) reset(piece *SinglePieceData) {
 
 // poll polls messages from peer and sends it to
 // the message channel. On error, the message will be nil.
-func (c *Peer) poll() {
+func (c *Peer) Poll() {
 	for {
 		_, msg, err := c.Recv()
 		if err != nil {
@@ -295,7 +268,7 @@ func (c *Peer) poll() {
 			return
 		}
 		if msg == nil {
-			log.Printf("peer.poll keepalive from %s", c.PeerAddr)
+			// log.Printf("peer.poll keepalive from %s", c.PeerAddr)
 			continue
 		}
 		select {

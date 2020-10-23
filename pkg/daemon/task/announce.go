@@ -35,12 +35,21 @@ func (t *Task) announce(ctx context.Context) error {
 			return
 		}
 		_ = interval
+
+		t.mu.RLock()
+		if t.pieces.Len() == 0 {
+			log.Printf("task.announce: task is done")
+			t.mu.RUnlock()
+			return
+		}
+		t.mu.RUnlock()
+
 		t.spawnPeers(ctx, peers)
 	}
 
 	execute()
 
-	ticker := time.NewTicker(time.Minute * 10)
+	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 
 	for {
@@ -57,13 +66,16 @@ func (t *Task) announce(ctx context.Context) error {
 func (t *Task) spawnPeers(ctx context.Context, peers []string) {
 	log.Printf("task.spawnPeers entering")
 
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
 	n := 0
 
 	for _, address := range peers {
-		if _, ok := t.clients[address]; ok {
+		if _, ok := t.busyPeers[address]; ok {
+			continue
+		}
+		if _, ok := t.idlePeers[address]; ok {
 			continue
 		}
 		go t.spawnPeer(ctx, address)
