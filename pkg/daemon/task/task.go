@@ -39,6 +39,11 @@ func (t *Task) AddClient(client *peer.Peer) {
 	}
 
 	t.clients[client.PeerAddr] = client
+	client.OnExit = func(p *peer.Peer) {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		delete(t.clients, p.PeerAddr)
+	}
 
 	go func() {
 		if err := client.Download(t.pending, t.done); err != nil {
@@ -56,4 +61,8 @@ func (t *Task) Run(ctx context.Context) {
 
 	go t.announce(ctx)
 	go t.savePiece(ctx)
+}
+
+func (t *Task) schedule() {
+
 }

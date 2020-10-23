@@ -33,6 +33,8 @@ type Peer struct {
 	HerPeerID common.PeerID
 	PeerAddr  string
 
+	OnExit func(p *Peer)
+
 	conn net.Conn
 	rw   *bufio.ReadWriter
 
@@ -41,9 +43,12 @@ type Peer struct {
 
 	PM *store.PieceManager
 
-	msgCh    chan message.Message
-	HaveCh   chan int
-	curPiece *SinglePieceData
+	msgCh  chan message.Message
+	HaveCh chan int
+
+	curPiece   *SinglePieceData
+	chSetPiece chan *SinglePieceData
+	donePiece  chan error
 
 	unchoked   bool
 	downloaded int
@@ -59,6 +64,7 @@ func (c *Peer) SetConn(conn net.Conn) {
 		bufio.NewWriter(conn),
 	)
 
+	c.chSetPiece = make(chan *SinglePieceData)
 	c.msgCh = make(chan message.Message)
 	c.HaveCh = make(chan int, 16)
 }
@@ -174,6 +180,7 @@ keepalive:
 
 // Download ...
 func (c *Peer) Download(pending chan SinglePieceData, done chan SinglePieceData) error {
+	go c.Run()
 	go c.poll()
 
 	for {
@@ -198,11 +205,14 @@ func (c *Peer) Download(pending chan SinglePieceData, done chan SinglePieceData)
 			continue
 		}
 
-		if err := c.work(&piece); err != nil {
+		c.donePiece = make(chan error)
+		c.chSetPiece <- &piece
+		if err := <-c.donePiece; err != nil {
 			log.Printf("download piece failed: %v\n", err)
 			pending <- piece
 			return fmt.Errorf("download piece failed: %v", err)
 		}
+		close(c.donePiece)
 
 		if err := c.checkIntegrity(&piece); err != nil {
 			log.Printf("check integrity failed: %v\n", err)
@@ -224,38 +234,44 @@ func (c *Peer) getPendingPiece(pending chan SinglePieceData) (SinglePieceData, b
 	}
 }
 
-func (c *Peer) work(piece *SinglePieceData) error {
-	c.reset(piece)
+func (c *Peer) exit(err error) {
+	log.Printf("peer: exiting: %v", err)
+	c.OnExit(c)
+}
 
-	c.curPiece = piece
-	defer func() {
-		c.curPiece = nil
-	}()
-
-	for c.downloaded < piece.Length {
-		if err := c.sendRequests(piece); err != nil {
-			return err
+func (c *Peer) Run() {
+	for {
+		if c.curPiece != nil {
+			if err := c.sendRequests(c.curPiece); err != nil {
+				c.donePiece <- err
+				return
+			}
 		}
 		select {
 		case msg := <-c.msgCh:
 			if msg == nil {
-				return fmt.Errorf("peer.work error on poll")
+				c.exit(fmt.Errorf("peer.work error on poll"))
+				return
 			}
 			if err := c.handleMessage(msg); err != nil {
-				return err
+				c.exit(err)
+				return
 			}
 		case have := <-c.HaveCh:
 			if err := c.Send(message.MsgHave, &message.Have{Index: have}); err != nil {
 				log.Printf("error send have: %v\n", err)
-				return err
+				c.exit(err)
+				return
 			}
+		case piece := <-c.chSetPiece:
+			c.reset(piece)
+			c.curPiece = piece
 		case <-c.Ctx.Done():
 			log.Printf("peer.work: context done: %v", c.Ctx.Err())
-			return nil
+			c.exit(c.Ctx.Err())
+			return
 		}
 	}
-
-	return nil
 }
 
 func (c *Peer) reset(piece *SinglePieceData) {
@@ -303,7 +319,7 @@ func (c *Peer) sendRequests(piece *SinglePieceData) error {
 			Begin:  c.requested,
 			Length: blockSize,
 		}); err != nil {
-			return fmt.Errorf("send request failed")
+			return fmt.Errorf("send request failed: %v", err)
 		}
 
 		c.backlog++
@@ -353,6 +369,9 @@ func (c *Peer) handleMessage(msg message.Message) error {
 		}
 		log.Printf("upload piece to %s: %d\n", c.PeerAddr, request.Index)
 	case *message.Piece:
+		if piece == nil {
+			return fmt.Errorf("peer sent piece but I'm downloading it")
+		}
 		pieceRecv := msg.(*message.Piece)
 		if pieceRecv.Index != piece.Index {
 			return fmt.Errorf("peer sent unknown piece index %d", pieceRecv.Index)
@@ -366,6 +385,9 @@ func (c *Peer) handleMessage(msg message.Message) error {
 		copy(piece.Data[pieceRecv.Begin:], pieceRecv.Data)
 		c.downloaded += len(pieceRecv.Data)
 		c.backlog--
+		if c.downloaded == piece.Length {
+			c.donePiece <- nil
+		}
 		//log.Printf("receive piece: index=%d,begin:%d,length:%d backlog:%d,requested:%d,downloaded:%d",
 		//	pieceRecv.Index, pieceRecv.Begin, len(pieceRecv.Data),
 		//	c.backlog, c.requested, c.downloaded,
