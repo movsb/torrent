@@ -7,8 +7,10 @@ import (
 
 // File ...
 type File struct {
-	Name     string
+	Name string
+
 	Announce string
+	Nodes    []_Node
 
 	Single bool
 	Files  []Item

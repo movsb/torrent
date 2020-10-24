@@ -14,6 +14,7 @@ import (
 type _File struct {
 	Announce string             `bencode:"announce"`
 	Info     bencode.RawMessage `bencode:"info"`
+	Nodes    []_Node            `bencode:"nodes"`
 }
 
 func (f *_File) convert() (*File, error) {
@@ -27,8 +28,9 @@ func (f *_File) convert() (*File, error) {
 	}
 
 	c := &File{
-		Announce:    f.Announce,
 		Name:        i.Name,
+		Announce:    f.Announce,
+		Nodes:       f.Nodes,
 		Length:      i.Length,
 		PieceLength: i.PieceLength,
 		Files:       make([]Item, 0, len(i.Files)),
@@ -83,6 +85,35 @@ func (f *_File) infoHash() [20]byte {
 		panic(err)
 	}
 	return sha1.Sum(buf.Bytes())
+}
+
+// _Node ...
+type _Node struct {
+	Host string `bencode:"host"`
+	Port uint16 `bencode:"port"`
+}
+
+// UnmarshalBencode ...
+func (n *_Node) UnmarshalBencode(l []byte) error {
+	var hp interface{}
+	if err := bencode.DecodeBytes(l, &hp); err != nil {
+		return err
+	}
+	m, ok := hp.([]interface{})
+	if !ok {
+		return fmt.Errorf("nodes isn't a list")
+	}
+	host, ok := m[0].(string)
+	if !ok {
+		return fmt.Errorf("host is not a string")
+	}
+	n.Host = host
+	port, ok := m[1].(int64)
+	if !ok {
+		return fmt.Errorf("port is not an integer")
+	}
+	n.Port = uint16(port)
+	return nil
 }
 
 // _Info ...
