@@ -12,6 +12,16 @@ import (
 // Hash ...
 type Hash [20]byte
 
+// HashFromString ...
+func HashFromString(s string) (Hash, error) {
+	if len(s) != 20 {
+		return Hash{}, fmt.Errorf("invalid string for info hash")
+	}
+	var hash Hash
+	copy(hash[:], s)
+	return hash, nil
+}
+
 func (h Hash) String() string {
 	return fmt.Sprintf("%x", [20]byte(h))
 }
@@ -32,6 +42,11 @@ func (h *Hash) Set(other []byte) {
 // Copy ...
 func (h *Hash) Copy(other Hash) {
 	copy(h[:], other[:])
+}
+
+// MarshalBencode ...
+func (h Hash) MarshalBencode() ([]byte, error) {
+	return bencode.EncodeBytes(string(h[:]))
 }
 
 // PieceHashes ...

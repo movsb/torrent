@@ -6,21 +6,8 @@ import (
 	"log"
 	"math/rand"
 
+	"github.com/movsb/torrent/pkg/common"
 	"github.com/zeebo/bencode"
-)
-
-// KRPCMethod ...
-type KRPCMethod byte
-
-// KRPCID ...
-type KRPCID [20]byte
-
-// KRPC messages ...
-const (
-	Ping KRPCMethod = iota
-	FindNode
-	GetPeers
-	AnnouncePeers
 )
 
 // KRPCCommon ...
@@ -220,4 +207,59 @@ func (c *Client) FindNode(target NodeID) ([]CompactNodeInfo, error) {
 	}
 
 	return nodes, nil
+}
+
+// GetPeers ...
+func (c *Client) GetPeers(infoHash common.Hash) (token string, peers []CompactPeerInfo, nodes []CompactNodeInfo, rErr error) {
+	args := map[string]interface{}{
+		`info_hash`: infoHash,
+	}
+	if err := c.send(`get_peers`, args); err != nil {
+		rErr = err
+		return
+	}
+	r, err := c.recv()
+	if err != nil {
+		rErr = err
+		return
+	}
+
+	tokenString, ok := r.Values[`token`].(string)
+	if !ok {
+		rErr = fmt.Errorf("dht: get_peers: no valid token returned")
+		return
+	}
+	token = tokenString
+
+	peerStrings, hasValues := r.Values[`values`].([]string)
+	if hasValues {
+		for _, value := range peerStrings {
+			var peer CompactPeerInfo
+			if err := peer.Unmarshal([]byte(value)); err != nil {
+				rErr = fmt.Errorf("dht: get_peers: %v", err)
+				return
+			}
+			peers = append(peers, peer)
+		}
+	}
+
+	nodesString, hasNodes := r.Values[`nodes`].(string)
+	if hasNodes {
+		nodeBytes := []byte(nodesString)
+		for i := 0; i < len(nodeBytes); i += 26 {
+			var node CompactNodeInfo
+			if err := node.Unmarshal(nodeBytes[i : i+26]); err != nil {
+				rErr = fmt.Errorf("dht: find_node: %v", err)
+				return
+			}
+			nodes = append(nodes, node)
+		}
+	}
+
+	if (hasValues && hasNodes) || (!hasValues && !hasNodes) {
+		rErr = fmt.Errorf("dht: get_peers: values and/or nodes are missing or exist both")
+		return
+	}
+
+	return
 }
