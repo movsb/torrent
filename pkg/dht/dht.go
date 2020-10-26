@@ -13,6 +13,16 @@ import (
 // NodeID ...
 type NodeID [20]byte
 
+// NodeIDFromString ...
+func NodeIDFromString(s string) NodeID {
+	if len(s) != 20 {
+		panic(`node id string length is not equal to 20`)
+	}
+	var id NodeID
+	copy(id[:], s)
+	return id
+}
+
 func (n NodeID) String() string {
 	return fmt.Sprintf("%x", [20]byte(n))
 }
