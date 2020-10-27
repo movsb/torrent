@@ -1,11 +1,9 @@
 package dht
 
 import (
+	"encoding/hex"
 	"fmt"
-	"log"
 	"math/big"
-	"math/rand"
-	"net"
 
 	"github.com/zeebo/bencode"
 )
@@ -14,13 +12,17 @@ import (
 type NodeID [20]byte
 
 // NodeIDFromString ...
-func NodeIDFromString(s string) NodeID {
-	if len(s) != 20 {
-		panic(`node id string length is not equal to 20`)
+func NodeIDFromString(s string) (NodeID, error) {
+	if len(s) != 40 {
+		return NodeID{}, fmt.Errorf(`node id string length is not equal to 40`)
+	}
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return NodeID{}, err
 	}
 	var id NodeID
-	copy(id[:], s)
-	return id
+	copy(id[:], b)
+	return id, nil
 }
 
 func (n NodeID) String() string {
@@ -44,60 +46,5 @@ func (n NodeID) Distance(other NodeID) *big.Int {
 var myNodeID NodeID
 
 func init() {
-	rand.Read(myNodeID[:])
-}
-
-// Client ...
-type Client struct {
-	MyNodeID NodeID
-	Address  string
-
-	conn *net.UDPConn
-}
-
-func (c *Client) dial() error {
-	if c.conn != nil {
-		return nil
-	}
-	dstAddr, err := net.ResolveUDPAddr("udp", c.Address)
-	if err != nil {
-		return fmt.Errorf("resolve udp address failed: %v", err)
-	}
-	srcAddr := &net.UDPAddr{IP: net.IPv4zero, Port: 0}
-	conn, err := net.DialUDP("udp", srcAddr, dstAddr)
-	if err != nil {
-		return fmt.Errorf("dial udp address failed: %v", err)
-	}
-	c.conn = conn
-	return nil
-}
-
-// Ping ...
-func (c *Client) Ping() (Response, error) {
-	if err := c.dial(); err != nil {
-		return Response{}, err
-	}
-	q := Query{
-		KRPCCommon: KRPCCommon{
-			TransactionID: makeTransactionID(),
-			Type:          'q',
-		},
-		Query: `ping`,
-		Args: map[string]interface{}{
-			`id`: c.MyNodeID,
-		},
-	}
-	b, err := bencode.EncodeBytes(q)
-	if err != nil {
-		return Response{}, err
-	}
-	if _, err := c.conn.Write(b); err != nil {
-		log.Printf("dht: ping: %v", err)
-		return Response{}, err
-	}
-	r := Response{}
-	if err := bencode.NewDecoder(c.conn).Decode(&r); err != nil {
-		return r, err
-	}
-	return r, nil
+	myNodeID, _ = NodeIDFromString(`d1101a2b9d202811a05e8c57c557a20bf974dc8a`)
 }

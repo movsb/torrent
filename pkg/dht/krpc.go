@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net"
+	"time"
 
 	"github.com/movsb/torrent/pkg/common"
 	"github.com/zeebo/bencode"
@@ -77,8 +79,8 @@ type Response struct {
 }
 
 type _E struct {
-	Code    _ErrorCode `bencode:"code"`
-	Message string     `bencode:"message"`
+	Code    int    `bencode:"code"`
+	Message string `bencode:"message"`
 }
 
 func (e _E) Error() string {
@@ -99,7 +101,7 @@ func (e *_E) UnmarshalBencode(l []byte) error {
 	if !ok {
 		return fmt.Errorf("code is not an integer")
 	}
-	e.Code = _ErrorCode(code)
+	e.Code = int(code)
 	message, ok := m[1].(string)
 	if !ok {
 		return fmt.Errorf("message is not a string")
@@ -108,15 +110,30 @@ func (e *_E) UnmarshalBencode(l []byte) error {
 	return nil
 }
 
-type _ErrorCode int
+// Client ...
+type Client struct {
+	MyNodeID NodeID
+	Address  string
 
-// DHT Query Error
-const (
-	GenericError  _ErrorCode = 201
-	ServerError   _ErrorCode = 202
-	ProtocolError _ErrorCode = 203
-	MethodUnknown _ErrorCode = 204
-)
+	conn *net.UDPConn
+}
+
+func (c *Client) dial() error {
+	if c.conn != nil {
+		return nil
+	}
+	dstAddr, err := net.ResolveUDPAddr("udp", c.Address)
+	if err != nil {
+		return fmt.Errorf("resolve udp address failed: %v", err)
+	}
+	srcAddr := &net.UDPAddr{IP: net.IPv4zero, Port: 0}
+	conn, err := net.DialUDP("udp", srcAddr, dstAddr)
+	if err != nil {
+		return fmt.Errorf("dial udp address failed: %v", err)
+	}
+	c.conn = conn
+	return nil
+}
 
 func (c *Client) send(query string, args map[string]interface{}) error {
 	if err := c.dial(); err != nil {
@@ -138,6 +155,7 @@ func (c *Client) send(query string, args map[string]interface{}) error {
 	}
 
 	b, err := bencode.EncodeBytes(q)
+	fmt.Println(`send:`, string(b))
 	if err != nil {
 		return err
 	}
@@ -151,6 +169,8 @@ func (c *Client) send(query string, args map[string]interface{}) error {
 
 func (c *Client) recv() (Response, error) {
 	r := Response{}
+	defer c.conn.SetReadDeadline(time.Time{})
+	c.conn.SetReadDeadline(time.Now().Add(time.Second * 5))
 	if err := bencode.NewDecoder(c.conn).Decode(&r); err != nil {
 		return r, err
 	}
@@ -169,6 +189,19 @@ func (c *Client) recv() (Response, error) {
 	}
 
 	return r, nil
+}
+
+// Ping ...
+func (c *Client) Ping() error {
+	if err := c.send(`ping`, nil); err != nil {
+		return err
+	}
+	r, err := c.recv()
+	if err != nil {
+		return nil
+	}
+	_ = r
+	return nil
 }
 
 // FindNode ...
@@ -229,7 +262,7 @@ func (c *Client) GetPeers(infoHash common.Hash) (token string, peers []CompactPe
 		rErr = fmt.Errorf("dht: get_peers: no valid token returned")
 		return
 	}
-	token = tokenString
+	token = fmt.Sprintf("%x", tokenString)
 
 	peerStrings, hasValues := r.Values[`values`].([]string)
 	if hasValues {
@@ -262,4 +295,22 @@ func (c *Client) GetPeers(infoHash common.Hash) (token string, peers []CompactPe
 	}
 
 	return
+}
+
+// AnnouncePeer ...
+func (c *Client) AnnouncePeer(infoHash common.Hash, port uint16, token string) error {
+	args := map[string]interface{}{
+		`info_hash`: infoHash,
+		`port`:      port,
+		`token`:     token,
+	}
+	if err := c.send(`announce_peer`, args); err != nil {
+		return err
+	}
+	r, err := c.recv()
+	if err != nil {
+		return err
+	}
+	_ = r
+	return nil
 }

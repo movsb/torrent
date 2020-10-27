@@ -2,6 +2,7 @@ package common
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -14,11 +15,15 @@ type Hash [20]byte
 
 // HashFromString ...
 func HashFromString(s string) (Hash, error) {
-	if len(s) != 20 {
+	if len(s) != 40 {
 		return Hash{}, fmt.Errorf("invalid string for info hash")
 	}
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return Hash{}, err
+	}
 	var hash Hash
-	copy(hash[:], s)
+	copy(hash[:], b)
 	return hash, nil
 }
 
