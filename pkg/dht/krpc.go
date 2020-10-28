@@ -110,6 +110,59 @@ func (e *_E) UnmarshalBencode(l []byte) error {
 	return nil
 }
 
+// Server ...
+type Server struct {
+	MyNodeID NodeID
+	Address  string
+}
+
+// Serve ...
+func (s *Server) Serve() error {
+	addr, err := net.ResolveUDPAddr(`udp`, s.Address)
+	if err != nil {
+		return fmt.Errorf(`dht: server: serve: ResolveUDPAddr: %v`, err)
+	}
+
+	conn, err := net.ListenUDP(`udp`, addr)
+	if err != nil {
+		return fmt.Errorf(`dht: server: serve: ListenUDP: %v`, err)
+	}
+	defer conn.Close()
+
+	buf := make([]byte, 64<<10)
+	for {
+		n, r, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			return fmt.Errorf(`dht: server: serve: ReadFromUDP: %v`, err)
+		}
+		s.recv(r, buf[:n])
+	}
+}
+
+func (s *Server) recv(addr *net.UDPAddr, buf []byte) {
+
+}
+
+// Ping ...
+func (s *Server) Ping(q *Query) {
+
+}
+
+// FindNode ...
+func (s *Server) FindNode(q *Query) {
+
+}
+
+// GetPeers ...
+func (s *Server) GetPeers(q *Query) {
+
+}
+
+// AnnouncePeer ...
+func (s *Server) AnnouncePeer(q *Query) {
+
+}
+
 // Client ...
 type Client struct {
 	MyNodeID NodeID
