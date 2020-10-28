@@ -26,7 +26,7 @@ func (t _TransactionID) MarshalBencode() ([]byte, error) {
 }
 
 // UnmarshalBencode ...
-func (t _TransactionID) UnmarshalBencode(b []byte) error {
+func (t *_TransactionID) UnmarshalBencode(b []byte) error {
 	var s string
 	if err := bencode.DecodeBytes(b, &s); err != nil {
 		return err

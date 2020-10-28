@@ -1,7 +1,6 @@
 package dht
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/movsb/torrent/pkg/common"
@@ -19,5 +18,6 @@ func TestPing(t *testing.T) {
 	//node, _ := NodeIDFromString(`819e2e807aa72266abd8a8e1d11479feee667220`)
 	_ = ih
 	//fmt.Println(dht.GetPeers(ih))
-	fmt.Println(dht.AnnouncePeer(ih, 6181, "\x31\x88\xe3\x3c"))
+	//fmt.Println(dht.AnnouncePeer(ih, 6181, "\x31\x88\xe3\x3c"))
+	dht.Ping()
 }
