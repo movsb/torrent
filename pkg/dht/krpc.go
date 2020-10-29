@@ -1,204 +1,128 @@
 package dht
 
 import (
-	"errors"
+	"container/list"
 	"fmt"
 	"log"
-	"math/rand"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/movsb/torrent/pkg/common"
 	"github.com/zeebo/bencode"
 )
 
-// KRPCCommon ...
-type KRPCCommon struct {
-	TransactionID _TransactionID `bencode:"t"` // the transaction id
-	Type          _ByteAsString  `bencode:"y"` // the type of message: `q` for query, `r` for response, `e` for error
-}
-
-type _TransactionID [2]byte
-
-// MarshalBencode ...
-func (t _TransactionID) MarshalBencode() ([]byte, error) {
-	return bencode.EncodeBytes(string(t[:]))
-}
-
-// UnmarshalBencode ...
-func (t *_TransactionID) UnmarshalBencode(b []byte) error {
-	var s string
-	if err := bencode.DecodeBytes(b, &s); err != nil {
-		return err
-	}
-	if len(s) != 2 {
-		return errors.New("transaction id len != 2")
-	}
-	t[0], t[1] = s[0], s[1]
-	return nil
-}
-
-type _ByteAsString byte
-
-// MarshalBencode ...
-func (b _ByteAsString) MarshalBencode() ([]byte, error) {
-	return bencode.EncodeBytes(string(b))
-}
-
-// UnmarshalBencode ...
-func (b *_ByteAsString) UnmarshalBencode(r []byte) error {
-	var s string
-	if err := bencode.DecodeBytes(r, &s); err != nil {
-		return err
-	}
-	if len(s) != 1 {
-		return errors.New("len != 1")
-	}
-	*b = _ByteAsString(s[0])
-	return nil
-}
-
-// MakeTransactionID ...
-func makeTransactionID() (t _TransactionID) {
-	rand.Read(t[:])
-	return
-}
-
-// Query ...
-type Query struct {
-	KRPCCommon
-	Query string                 `bencode:"q"`
-	Args  map[string]interface{} `bencode:"a"`
-}
-
-// Response ...
-type Response struct {
-	KRPCCommon
-	Values map[string]interface{} `bencode:"r"`
-	Err    _E                     `bencode:"e"`
-}
-
-type _E struct {
-	Code    int    `bencode:"code"`
-	Message string `bencode:"message"`
-}
-
-func (e _E) Error() string {
-	return fmt.Sprintf("code: %d, message: %s", e.Code, e.Message)
-}
-
-// UnmarshalBencode ...
-func (e *_E) UnmarshalBencode(l []byte) error {
-	var hp interface{}
-	if err := bencode.DecodeBytes(l, &hp); err != nil {
-		return err
-	}
-	m, ok := hp.([]interface{})
-	if !ok {
-		return fmt.Errorf("e isn't a list")
-	}
-	code, ok := m[0].(int64)
-	if !ok {
-		return fmt.Errorf("code is not an integer")
-	}
-	e.Code = int(code)
-	message, ok := m[1].(string)
-	if !ok {
-		return fmt.Errorf("message is not a string")
-	}
-	e.Message = message
-	return nil
-}
-
-// Server ...
-type Server struct {
-	MyNodeID NodeID
-	Address  string
-}
-
-// Serve ...
-func (s *Server) Serve() error {
-	addr, err := net.ResolveUDPAddr(`udp`, s.Address)
-	if err != nil {
-		return fmt.Errorf(`dht: server: serve: ResolveUDPAddr: %v`, err)
-	}
-
-	conn, err := net.ListenUDP(`udp`, addr)
-	if err != nil {
-		return fmt.Errorf(`dht: server: serve: ListenUDP: %v`, err)
-	}
-	defer conn.Close()
-
-	buf := make([]byte, 64<<10)
-	for {
-		n, r, err := conn.ReadFromUDP(buf)
-		if err != nil {
-			return fmt.Errorf(`dht: server: serve: ReadFromUDP: %v`, err)
-		}
-		s.recv(r, buf[:n])
-	}
-}
-
-func (s *Server) recv(addr *net.UDPAddr, buf []byte) {
-
-}
-
-// Ping ...
-func (s *Server) Ping(q *Query) {
-
-}
-
-// FindNode ...
-func (s *Server) FindNode(q *Query) {
-
-}
-
-// GetPeers ...
-func (s *Server) GetPeers(q *Query) {
-
-}
-
-// AnnouncePeer ...
-func (s *Server) AnnouncePeer(q *Query) {
-
-}
-
 // Client ...
 type Client struct {
 	MyNodeID NodeID
 	Address  string
 
-	conn *net.UDPConn
+	tx uint16
+
+	conn    *net.UDPConn
+	recvBuf []byte
+	pending *list.List
+	mu      sync.Mutex
 }
 
-func (c *Client) dial() error {
-	if c.conn != nil {
-		return nil
-	}
+type _Pending struct {
+	tx          _TransactionID
+	timeEnqueue time.Time
+	addr        *net.UDPAddr
+	m           *Message
+	done        chan struct{}
+}
+
+// ListenAndServe ...
+func (c *Client) ListenAndServe() error {
+	c.recvBuf = make([]byte, 64<<10)
+	c.pending = list.New()
+	go c.tidyQueue()
+
 	dstAddr, err := net.ResolveUDPAddr("udp", c.Address)
 	if err != nil {
 		return fmt.Errorf("resolve udp address failed: %v", err)
 	}
-	srcAddr := &net.UDPAddr{IP: net.IPv4zero, Port: 0}
-	conn, err := net.DialUDP("udp", srcAddr, dstAddr)
+	c.conn, err = net.ListenUDP(`udp`, dstAddr)
 	if err != nil {
-		return fmt.Errorf("dial udp address failed: %v", err)
+		return fmt.Errorf("listen udp address failed: %v", err)
 	}
-	c.conn = conn
-	return nil
+	defer c.conn.Close()
+	log.Printf("listen udp address: %s", dstAddr.String())
+
+	for {
+		addr, msg, err := c.recv()
+		if err != nil {
+			return err
+		}
+		if msg.Type == 'q' {
+			c.onQuery(addr, msg)
+			continue
+		}
+		pending := c.dequeue(msg.TransactionID)
+		if pending == nil {
+			log.Printf("tx id %v not found", msg.TransactionID)
+			continue
+		}
+		pending.addr = addr
+		pending.m = msg
+		close(pending.done)
+	}
 }
 
-func (c *Client) send(query string, args map[string]interface{}) error {
-	if err := c.dial(); err != nil {
-		return err
-	}
+func (c *Client) onQuery(addr *net.UDPAddr, msg *Message) {
+	log.Printf("onQuery: addr: %v, msg: %v", addr, msg)
+}
 
-	q := Query{
-		KRPCCommon: KRPCCommon{
-			TransactionID: makeTransactionID(),
-			Type:          'q',
-		},
-		Query: query,
+func (c *Client) enqueue(tx _TransactionID) *_Pending {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	pending := &_Pending{
+		timeEnqueue: time.Now(),
+		tx:          tx,
+		done:        make(chan struct{}),
+	}
+	c.pending.PushBack(pending)
+	return pending
+}
+
+func (c *Client) dequeue(tx _TransactionID) *_Pending {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var pending *_Pending
+	for head := c.pending.Front(); head != nil; head = head.Next() {
+		p := head.Value.(*_Pending)
+		if p.tx == tx {
+			pending = p
+			c.pending.Remove(head)
+			break
+		}
+	}
+	return pending
+}
+
+func (c *Client) tidyQueue() {
+	tick := time.NewTicker(time.Second * 3)
+	for range tick.C {
+		c.mu.Lock()
+		var next *list.Element
+		for e := c.pending.Front(); e != nil; e = next {
+			next = e.Next()
+			p := e.Value.(*_Pending)
+			if time.Since(p.timeEnqueue) > time.Second*5 {
+				close(p.done)
+				c.pending.Remove(e)
+			}
+		}
+		c.mu.Unlock()
+	}
+}
+
+func (c *Client) sendQuery(addr string, query string, args map[string]interface{}) (*_Pending, error) {
+	q := Message{
+		TransactionID: makeTransactionID(),
+		Type:          'q',
+		Query:         query,
 		Args: map[string]interface{}{
 			`id`: c.MyNodeID,
 		},
@@ -207,69 +131,117 @@ func (c *Client) send(query string, args map[string]interface{}) error {
 		q.Args[k] = v // will override existing args
 	}
 
-	b, err := bencode.EncodeBytes(q)
+	udpAddr, err := net.ResolveUDPAddr(`udp`, addr)
+	if err != nil {
+		return nil, fmt.Errorf("dht: invalid address: %v", err)
+	}
+
+	pending := c.enqueue(q.TransactionID)
+	if err := c.send(udpAddr, &q); err != nil {
+		c.dequeue(q.TransactionID)
+		close(pending.done)
+		return nil, err
+	}
+
+	return pending, nil
+}
+
+func (c *Client) sendResponse(addr *net.UDPAddr, tx _TransactionID, values map[string]interface{}) error {
+	r := Message{
+		TransactionID: tx,
+		Type:          'r',
+		Values: map[string]interface{}{
+			`id`: c.MyNodeID,
+		},
+	}
+	for k, v := range values {
+		r.Values[k] = v // will override existing args
+	}
+	return c.send(addr, &r)
+}
+
+func (c *Client) sendError(addr *net.UDPAddr, tx _TransactionID, code int, message string) error {
+	e := Message{
+		TransactionID: tx,
+		Type:          'e',
+		Err: &_E{
+			Code:    code,
+			Message: message,
+		},
+	}
+	return c.send(addr, &e)
+}
+
+func (c *Client) send(addr *net.UDPAddr, m *Message) error {
+	b, err := bencode.EncodeBytes(m)
 	fmt.Println(`send:`, string(b))
 	if err != nil {
 		return err
 	}
-	if _, err := c.conn.Write(b); err != nil {
-		log.Printf("dht: find_node: %v", err)
+
+	if _, err := c.conn.WriteToUDP(b, addr); err != nil {
+		log.Printf("dht: failed to write udp to %s: %v", addr.String(), err)
 		return err
 	}
-
 	return nil
 }
 
-func (c *Client) recv() (Response, error) {
-	r := Response{}
-	defer c.conn.SetReadDeadline(time.Time{})
-	c.conn.SetReadDeadline(time.Now().Add(time.Second * 5))
-	if err := bencode.NewDecoder(c.conn).Decode(&r); err != nil {
-		return r, err
+func (c *Client) recv() (addr *net.UDPAddr, msg *Message, err error) {
+	// defer c.conn.SetReadDeadline(time.Time{})
+	// c.conn.SetReadDeadline(time.Now().Add(time.Second * 15))
+	n, addr, err := c.conn.ReadFromUDP(c.recvBuf)
+	if err != nil {
+		err = fmt.Errorf("dht: recv udp failed: %v", err)
+		return
 	}
-	if r.Type == 'e' {
-		return r, r.Err
+	msg = &Message{}
+	if err = bencode.DecodeBytes(c.recvBuf[:n], msg); err != nil {
+		err = fmt.Errorf("dht: decode recvBuf failed: %v", err)
+		return
 	}
-	if r.Type != 'r' {
-		return r, fmt.Errorf("dht: response not r")
+	if msg.Type == 'e' {
+		return
 	}
-	id, ok := r.Values[`id`].(string)
+	id, ok := msg.Values[`id`].(string)
 	if !ok {
-		return r, fmt.Errorf(`dht: response has no id`)
+		err = fmt.Errorf(`dht: response has no id`)
+		return
 	}
 	if len(id) != 20 {
-		return r, fmt.Errorf("dht: response id is not 20 bytes long")
+		err = fmt.Errorf("dht: response id is not 20 bytes long")
+		return
 	}
-
-	return r, nil
+	return
 }
 
 // Ping ...
-func (c *Client) Ping() error {
-	if err := c.send(`ping`, nil); err != nil {
-		return err
-	}
-	r, err := c.recv()
+func (c *Client) Ping(addr string) error {
+	pending, err := c.sendQuery(addr, `ping`, nil)
 	if err != nil {
-		return nil
+		return fmt.Errorf("dht: ping failed: %v", err)
 	}
-	_ = r
+	<-pending.done
+	if pending.m == nil {
+		return fmt.Errorf("dht: no message for ping")
+	}
+	fmt.Printf("Ping response: %v\n", pending.m)
 	return nil
 }
 
 // FindNode ...
-func (c *Client) FindNode(target NodeID) ([]CompactNodeInfo, error) {
+func (c *Client) FindNode(addr string, target NodeID) ([]CompactNodeInfo, error) {
 	args := map[string]interface{}{
 		`target`: string(target[:]),
 	}
-	if err := c.send(`find_node`, args); err != nil {
+	pending, err := c.sendQuery(addr, `find_node`, args)
+	if err != nil {
 		return nil, err
 	}
-	r, err := c.recv()
-	if err != nil {
-		return nil, fmt.Errorf("dht: recv: %v", err)
+	<-pending.done
+	if pending.m == nil {
+		return nil, fmt.Errorf("dht: no message for find_node")
 	}
-	nodeValue, ok := r.Values[`nodes`]
+	nodeValue, ok := pending.m.Values[`nodes`]
 	if !ok {
 		return nil, nil // empty result isn't an error, the spec says 'should'
 	}
@@ -296,20 +268,21 @@ func (c *Client) FindNode(target NodeID) ([]CompactNodeInfo, error) {
 }
 
 // GetPeers ...
-func (c *Client) GetPeers(infoHash common.Hash) (token string, peers []CompactPeerInfo, nodes []CompactNodeInfo, rErr error) {
+func (c *Client) GetPeers(addr string, infoHash common.Hash) (token string, peers []CompactPeerInfo, nodes []CompactNodeInfo, rErr error) {
 	args := map[string]interface{}{
 		`info_hash`: infoHash,
 	}
-	if err := c.send(`get_peers`, args); err != nil {
-		rErr = err
-		return
-	}
-	r, err := c.recv()
+	pending, err := c.sendQuery(addr, `get_peers`, args)
 	if err != nil {
 		rErr = err
 		return
 	}
-
+	<-pending.done
+	if pending.m == nil {
+		rErr = fmt.Errorf("dht: no message for get_peers")
+		return
+	}
+	r := pending.m
 	tokenString, ok := r.Values[`token`].(string)
 	if !ok {
 		rErr = fmt.Errorf("dht: get_peers: no valid token returned")
@@ -351,19 +324,20 @@ func (c *Client) GetPeers(infoHash common.Hash) (token string, peers []CompactPe
 }
 
 // AnnouncePeer ...
-func (c *Client) AnnouncePeer(infoHash common.Hash, port uint16, token string) error {
+func (c *Client) AnnouncePeer(addr string, infoHash common.Hash, port uint16, token string) error {
 	args := map[string]interface{}{
 		`info_hash`: infoHash,
 		`port`:      port,
 		`token`:     token,
 	}
-	if err := c.send(`announce_peer`, args); err != nil {
-		return err
-	}
-	r, err := c.recv()
+	pending, err := c.sendQuery(addr, `announce_peer`, args)
 	if err != nil {
 		return err
 	}
-	_ = r
+	<-pending.done
+	if pending.m == nil {
+		return fmt.Errorf("dht: no message for announce_peer")
+	}
+
 	return nil
 }
