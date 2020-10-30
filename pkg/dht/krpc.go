@@ -17,12 +17,11 @@ type Client struct {
 	MyNodeID NodeID
 	Address  string
 
-	tx uint16
-
 	conn    *net.UDPConn
 	recvBuf []byte
-	pending *list.List
+
 	mu      sync.Mutex
+	pending *list.List
 }
 
 type _Pending struct {
@@ -105,6 +104,7 @@ func (c *Client) tidyQueue() {
 	tick := time.NewTicker(time.Second * 3)
 	for range tick.C {
 		c.mu.Lock()
+		log.Printf("enter tidy: %d\n", c.pending.Len())
 		var next *list.Element
 		for e := c.pending.Front(); e != nil; e = next {
 			next = e.Next()
@@ -112,6 +112,7 @@ func (c *Client) tidyQueue() {
 			if time.Since(p.timeEnqueue) > time.Second*5 {
 				close(p.done)
 				c.pending.Remove(e)
+				log.Printf("tidy %v\n", p.tx)
 			}
 		}
 		c.mu.Unlock()

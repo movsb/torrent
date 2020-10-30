@@ -17,7 +17,6 @@ func TestPing(t *testing.T) {
 		}
 	}()
 	time.Sleep(time.Second)
-	//ih, _ := common.HashFromString(`d1101a2b9d202811a05e8c57c557a20bf974dc8a`)
 	if err := dht.Ping(`router.bittorrent.com:6881`); err != nil {
 		panic(err)
 	}

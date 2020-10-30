@@ -2,6 +2,8 @@ package dht
 
 import (
 	"log"
+	"sort"
+	"sync"
 )
 
 // Router ...
@@ -11,6 +13,7 @@ type Router struct {
 	// buckets[2] = {4, 5, 6, 7}
 	buckets [160]*Bucket
 	myID    NodeID
+	mu      sync.Mutex
 }
 
 // NewRouter ...
@@ -22,10 +25,6 @@ func NewRouter(myID NodeID) *Router {
 		r.buckets[i] = new(Bucket)
 	}
 	return r
-}
-
-func (r *Router) addExtraBootstrapNodes(addrs []string) {
-
 }
 
 // returns -1: if id == self
@@ -49,4 +48,39 @@ func (r *Router) Upsert(node Node) {
 		return
 	}
 	bucket.Add(node)
+}
+
+// Closest ...
+func (r *Router) Closest(id NodeID, k int) []Node {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	nodes := make([]Node, 0, k)
+	bucketIndex := r.bucketIndex(id)
+	if bucketIndex == -1 {
+		// TODO add myself
+		// nodes = append(nodes, r.myID)
+		bucketIndex = 0
+	}
+	for i := bucketIndex; i >= 0; i-- {
+		if len(nodes) >= k {
+			break
+		}
+		nodes = append(nodes, r.buckets[i].Nodes()...)
+	}
+	for i := bucketIndex + 1; i < len(r.buckets); i++ {
+		if len(nodes) >= k {
+			break
+		}
+		nodes = append(nodes, r.buckets[i].Nodes()...)
+	}
+	sort.Slice(nodes, func(i, j int) bool {
+		di := id.Distance(nodes[i].ID)
+		dj := id.Distance(nodes[j].ID)
+		return di.Cmp(dj) == -1
+	})
+	if len(nodes) > k {
+		nodes = nodes[:k]
+	}
+	return nodes
 }

@@ -50,3 +50,13 @@ func (b *Bucket) Add(node Node) {
 	// TODO(movsb): ping to see if it exists
 	// if least-recently seen node not responded, evict it. And the new node is inserted into the tail.
 }
+
+// Nodes ...
+func (b *Bucket) Nodes() []Node {
+	nodes := make([]Node, 0, b.nodes.Len())
+	for e := b.nodes.Front(); e != nil; e = e.Next() {
+		spec := e.Value.(*_NodeSpec)
+		nodes = append(nodes, spec.node)
+	}
+	return nodes
+}
