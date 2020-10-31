@@ -22,6 +22,12 @@ type Bucket struct {
 	nodes *list.List
 }
 
+func newBucket() *Bucket {
+	return &Bucket{
+		nodes: list.New(),
+	}
+}
+
 // Add ...
 func (b *Bucket) Add(node Node) {
 	// already exists, move to back.

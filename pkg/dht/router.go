@@ -22,7 +22,7 @@ func NewRouter(myID NodeID) *Router {
 		myID: myID,
 	}
 	for i := 0; i < len(r.buckets); i++ {
-		r.buckets[i] = new(Bucket)
+		r.buckets[i] = newBucket()
 	}
 	return r
 }
@@ -41,12 +41,14 @@ func (r *Router) bucket(id NodeID) *Bucket {
 }
 
 // Upsert updates or inserts a node.
-func (r *Router) Upsert(node Node) {
+func (r *Router) Upsert(node Node, ping bool) {
 	bucket := r.bucket(node.ID)
 	if bucket == nil {
 		log.Printf("router: trying to add self as node")
 		return
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	bucket.Add(node)
 }
 

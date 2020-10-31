@@ -73,13 +73,14 @@ func (c *Client) onQuery(addr *net.UDPAddr, msg *Message) {
 	log.Printf("onQuery: addr: %v, msg: %v", addr, msg)
 }
 
-func (c *Client) enqueue(tx _TransactionID) *_Pending {
+func (c *Client) enqueue(tx _TransactionID, udpAddr *net.UDPAddr) *_Pending {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	pending := &_Pending{
 		timeEnqueue: time.Now(),
 		tx:          tx,
 		done:        make(chan struct{}),
+		addr:        udpAddr,
 	}
 	c.pending.PushBack(pending)
 	return pending
@@ -137,7 +138,7 @@ func (c *Client) sendQuery(addr string, query string, args map[string]interface{
 		return nil, fmt.Errorf("dht: invalid address: %v", err)
 	}
 
-	pending := c.enqueue(q.TransactionID)
+	pending := c.enqueue(q.TransactionID, udpAddr)
 	if err := c.send(udpAddr, &q); err != nil {
 		c.dequeue(q.TransactionID)
 		close(pending.done)
@@ -216,17 +217,27 @@ func (c *Client) recv() (addr *net.UDPAddr, msg *Message, err error) {
 }
 
 // Ping ...
-func (c *Client) Ping(addr string) error {
+func (c *Client) Ping(addr string) (Node, error) {
 	pending, err := c.sendQuery(addr, `ping`, nil)
 	if err != nil {
-		return fmt.Errorf("dht: ping failed: %v", err)
+		return Node{}, fmt.Errorf("dht: ping failed: %v", err)
 	}
 	<-pending.done
 	if pending.m == nil {
-		return fmt.Errorf("dht: no message for ping")
+		return Node{}, fmt.Errorf("dht: no message for ping")
 	}
 	fmt.Printf("Ping response: %v\n", pending.m)
-	return nil
+	idStr := pending.m.Values[`id`].(string)
+	var nodeID NodeID
+	copy(nodeID[:], idStr)
+	if err != nil {
+		return Node{}, err
+	}
+	return Node{
+		IP:   pending.addr.IP,
+		Port: uint16(pending.addr.Port),
+		ID:   nodeID,
+	}, nil
 }
 
 // FindNode ...

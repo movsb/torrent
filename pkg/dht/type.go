@@ -59,12 +59,13 @@ type Node struct {
 	ID   NodeID
 }
 
-// CompactNodeInfo ...
-type CompactNodeInfo struct {
-	ID   NodeID
-	IP   net.IP
-	Port uint16
+// Addr ...
+func (n Node) Addr() string {
+	return fmt.Sprintf("%s:%d", n.IP.String(), n.Port)
 }
+
+// CompactNodeInfo ...
+type CompactNodeInfo Node
 
 // Unmarshal ...
 func (n *CompactNodeInfo) Unmarshal(b []byte) error {
