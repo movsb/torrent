@@ -19,7 +19,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	quit := make(chan os.Signal)
+	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT)
 	signal.Notify(quit, syscall.SIGKILL)
 	signal.Notify(quit, syscall.SIGTERM)

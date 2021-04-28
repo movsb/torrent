@@ -2,9 +2,7 @@ package peer
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"crypto/sha1"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -16,14 +14,6 @@ import (
 	"github.com/movsb/torrent/pkg/daemon/store"
 	"github.com/movsb/torrent/pkg/message"
 )
-
-// SinglePieceData ...
-type SinglePieceData struct {
-	Index  int
-	Hash   common.Hash
-	Length int
-	Data   []byte
-}
 
 // Peer ...
 type Peer struct {
@@ -45,14 +35,14 @@ type Peer struct {
 	msgCh  chan message.Message
 	HaveCh chan int
 
-	curPiece   *SinglePieceData
-	chSetPiece chan *SinglePieceData
-	donePiece  chan error
-
+	setPieceCh chan _SetPiece
 	unchoked   bool
-	downloaded int
-	requested  int
-	backlog    int
+	curPiece   _SinglePiecePartial
+}
+
+type _SetPiece struct {
+	sp   *SinglePiece
+	done chan error
 }
 
 // tmp
@@ -63,7 +53,6 @@ func (c *Peer) SetConn(conn net.Conn) {
 		bufio.NewWriter(conn),
 	)
 
-	c.chSetPiece = make(chan *SinglePieceData)
 	c.msgCh = make(chan message.Message)
 	c.HaveCh = make(chan int, 16)
 }
@@ -178,33 +167,19 @@ keepalive:
 }
 
 // Download ...
-func (c *Peer) Download(piece SinglePieceData, done chan SinglePieceData) error {
-	c.donePiece = make(chan error)
-	c.chSetPiece <- &piece
-	if err := <-c.donePiece; err != nil {
+func (c *Peer) Download(piece *SinglePiece, done chan *SinglePiece) error {
+	dd := make(chan error)
+	defer close(dd)
+	c.setPieceCh <- _SetPiece{
+		sp:   piece,
+		done: dd,
+	}
+	if err := <-dd; err != nil {
 		log.Printf("download piece failed: %v\n", err)
 		return fmt.Errorf("download piece failed: %v", err)
 	}
-	close(c.donePiece)
-
-	if err := c.checkIntegrity(&piece); err != nil {
-		log.Printf("check integrity failed: %v\n", err)
-		return fmt.Errorf("check integrity failed: %v", err)
-	}
-
 	done <- piece
-
 	return nil
-}
-
-func (c *Peer) getPendingPiece(pending chan SinglePieceData) (SinglePieceData, bool) {
-	select {
-	case <-c.Ctx.Done():
-		log.Printf("peer: context done")
-		return SinglePieceData{}, false
-	case piece := <-pending:
-		return piece, true
-	}
 }
 
 func (c *Peer) exit(err error) {
@@ -214,9 +189,9 @@ func (c *Peer) exit(err error) {
 
 func (c *Peer) Run() {
 	for {
-		if c.curPiece != nil {
-			if err := c.sendRequests(c.curPiece); err != nil {
-				c.donePiece <- err
+		if c.curPiece.sp != nil {
+			if err := c.sendRequests(c.curPiece.sp); err != nil {
+				c.curPiece.done <- err
 				return
 			}
 		}
@@ -236,24 +211,17 @@ func (c *Peer) Run() {
 				c.exit(err)
 				return
 			}
-		case piece := <-c.chSetPiece:
-			c.reset(piece)
-			c.curPiece = piece
+		case sp := <-c.setPieceCh:
+			c.curPiece = _SinglePiecePartial{
+				data: make([]byte, c.curPiece.sp.Length),
+				sp:   sp.sp,
+				done: sp.done,
+			}
 		case <-c.Ctx.Done():
 			log.Printf("peer.work: context done: %v", c.Ctx.Err())
 			c.exit(c.Ctx.Err())
 			return
 		}
-	}
-}
-
-func (c *Peer) reset(piece *SinglePieceData) {
-	c.requested = 0
-	c.downloaded = 0
-	c.backlog = 0
-
-	if len(piece.Data) != piece.Length {
-		piece.Data = make([]byte, piece.Length)
 	}
 }
 
@@ -280,29 +248,28 @@ func (c *Peer) Poll() {
 	}
 }
 
-func (c *Peer) sendRequests(piece *SinglePieceData) error {
-	for c.unchoked && c.backlog < 5 && c.downloaded < piece.Length && c.requested < piece.Length {
+func (c *Peer) sendRequests(piece *SinglePiece) error {
+	for c.unchoked && c.curPiece.backlog < 5 && c.curPiece.downloaded < piece.Length && c.curPiece.requested < piece.Length {
 		blockSize := message.MaxRequestLength
-		if c.requested+blockSize > piece.Length {
-			blockSize = piece.Length - c.requested
+		if c.curPiece.requested+blockSize > piece.Length {
+			blockSize = piece.Length - c.curPiece.requested
 		}
 
 		if err := c.Send(message.MsgRequest, &message.Request{
 			Index:  piece.Index,
-			Begin:  c.requested,
+			Begin:  c.curPiece.requested,
 			Length: blockSize,
 		}); err != nil {
 			return fmt.Errorf("send request failed: %v", err)
 		}
 
-		c.backlog++
-		c.requested += blockSize
+		c.curPiece.backlog++
+		c.curPiece.requested += blockSize
 	}
 	return nil
 }
 
 func (c *Peer) handleMessage(msg message.Message) error {
-	piece := c.curPiece
 	switch typed := msg.(type) {
 	default:
 		return fmt.Errorf("peer sent unknown message: %v", reflect.TypeOf(typed).String())
@@ -342,38 +309,30 @@ func (c *Peer) handleMessage(msg message.Message) error {
 		}
 		log.Printf("upload piece to %s: %d\n", c.PeerAddr, request.Index)
 	case *message.Piece:
-		if piece == nil {
-			return fmt.Errorf("peer sent piece but I'm downloading it")
+		if c.curPiece.sp == nil {
+			return fmt.Errorf("peer sent piece that I'm not requesting")
 		}
 		pieceRecv := msg.(*message.Piece)
-		if pieceRecv.Index != piece.Index {
+		if pieceRecv.Index != c.curPiece.sp.Index {
 			return fmt.Errorf("peer sent unknown piece index %d", pieceRecv.Index)
 		}
-		if pieceRecv.Begin < 0 || pieceRecv.Begin+len(pieceRecv.Data) > len(piece.Data) {
+		if pieceRecv.Begin < 0 || pieceRecv.Begin+len(pieceRecv.Data) > c.curPiece.sp.Length {
 			return fmt.Errorf(
-				"peer sent data too long: begin: %d + data: %d > data: %d",
-				pieceRecv.Begin, len(pieceRecv.Data), len(piece.Data),
+				"peer sent data too long: begin: %d + data: %d > length: %d",
+				pieceRecv.Begin, len(pieceRecv.Data), c.curPiece.sp.Length,
 			)
 		}
-		copy(piece.Data[pieceRecv.Begin:], pieceRecv.Data)
-		c.downloaded += len(pieceRecv.Data)
-		c.backlog--
-		if c.downloaded == piece.Length {
-			c.donePiece <- nil
+		copy(c.curPiece.data[pieceRecv.Begin:], pieceRecv.Data)
+		c.curPiece.downloaded += len(pieceRecv.Data) // Or: begin + data
+		c.curPiece.backlog--
+		if c.curPiece.downloaded == c.curPiece.sp.Length {
+			c.curPiece.done <- nil
 		}
-		//log.Printf("receive piece: index=%d,begin:%d,length:%d backlog:%d,requested:%d,downloaded:%d",
-		//	pieceRecv.Index, pieceRecv.Begin, len(pieceRecv.Data),
-		//	c.backlog, c.requested, c.downloaded,
-		//)
+		// log.Printf("receive piece: index=%d,begin:%d,length:%d backlog:%d,requested:%d,downloaded:%d",
+		// 	pieceRecv.Index, pieceRecv.Begin, len(pieceRecv.Data),
+		// 	c.curPiece.backlog, c.curPiece.requested, c.curPiece.downloaded,
+		// )
 	}
 
-	return nil
-}
-
-func (c *Peer) checkIntegrity(piece *SinglePieceData) error {
-	got := sha1.Sum(piece.Data)
-	if !bytes.Equal(piece.Hash[:], got[:]) {
-		return fmt.Errorf("check integrity failed")
-	}
 	return nil
 }

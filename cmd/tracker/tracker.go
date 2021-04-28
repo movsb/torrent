@@ -32,7 +32,7 @@ func AddCommands(root *cobra.Command) {
 	runServerCmd := &cobra.Command{
 		Use:     `server <endpoint>`,
 		Short:   `Runs a tracker server.`,
-		Example: "server localhost:9999\nserver localhost:9999/announce",
+		Example: "server http://localhost:9999\nserver http://localhost:9999/announce",
 		Args:    cobra.ExactArgs(1),
 		RunE:    runServer,
 	}

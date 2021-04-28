@@ -24,8 +24,8 @@ type Task struct {
 	busyPeers map[string]*peer.Peer
 	idlePeers map[string]*peer.Peer
 
-	pieces *list.List
-	done   chan peer.SinglePieceData
+	pieces   *list.List
+	gotPiece chan *peer.SinglePiece
 
 	mu sync.RWMutex
 }
@@ -83,7 +83,7 @@ func (t *Task) schedule(lock bool) {
 		if len(t.idlePeers) <= 0 {
 			return
 		}
-		p := e.Value.(peer.SinglePieceData)
+		p := e.Value.(*peer.SinglePiece)
 		if t.BitField.HasPiece(p.Index) {
 			pops = append(pops, e)
 			continue
@@ -102,8 +102,8 @@ func (t *Task) schedule(lock bool) {
 			pops = append(pops, e)
 			busy[client.PeerAddr] = client
 
-			go func(client *peer.Peer, piece peer.SinglePieceData) {
-				if err := client.Download(piece, t.done); err != nil {
+			go func(client *peer.Peer, piece *peer.SinglePiece) {
+				if err := client.Download(piece, t.gotPiece); err != nil {
 					log.Printf("peer download error: %s", err)
 					client.OnExit(client)
 					return

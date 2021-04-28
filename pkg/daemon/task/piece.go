@@ -21,12 +21,7 @@ func (t *Task) initPieces() {
 			length = remain
 		}
 
-		piece := peer.SinglePieceData{
-			Index:  i,
-			Hash:   t.File.PieceHashes.Index(i),
-			Length: length,
-		}
-
+		piece := peer.NewSinglePiece(context.TODO(), i, t.File.PieceHashes.Index(i), length)
 		list.PushBack(piece)
 
 		//if i >= 10 {
@@ -35,7 +30,7 @@ func (t *Task) initPieces() {
 	}
 
 	t.pieces = list
-	t.done = make(chan peer.SinglePieceData)
+	t.gotPiece = make(chan *peer.SinglePiece, 100)
 }
 
 func (t *Task) savePiece(ctx context.Context) {
@@ -77,7 +72,7 @@ func (t *Task) savePiece(ctx context.Context) {
 		)
 	}
 
-	save := func(piece peer.SinglePieceData) bool {
+	save := func(piece *peer.SinglePiece) bool {
 		if t.BitField.HasPiece(piece.Index) {
 			log.Printf("task.savePiece: duplicate piece: %d", piece.Index)
 			return false
@@ -119,7 +114,7 @@ func (t *Task) savePiece(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			log.Printf("task.savePiece: context done")
-		case piece := <-t.done:
+		case piece := <-t.gotPiece:
 			if save(piece) && donePieces == nPieces {
 				log.Printf("task.savePiece: task done")
 				return

@@ -11,10 +11,11 @@ func AddCommands(parent *cobra.Command) {
 	parent.AddCommand(bencodeCmd)
 
 	decodeCmd := &cobra.Command{
-		Use:   `decode <file>`,
-		Short: `Decode bencode from file.`,
-		Args:  cobra.ExactArgs(1),
-		Run:   decode,
+		Use:     `decode <file>`,
+		Short:   `Decode bencode from file.`,
+		Example: `decode ubuntu.torrent`,
+		Args:    cobra.ExactArgs(1),
+		Run:     decode,
 	}
 	bencodeCmd.AddCommand(decodeCmd)
 }
